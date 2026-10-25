@@ -48,6 +48,17 @@ async function logIn(page) {
   await expect(password).toBeHidden({ timeout: 30_000 });
 }
 
+// Resolve or reject like promise, but reject after ms if it hasn't settled
+// (unlike Playwright's own timeouts, this fires even if the browser hangs).
+function withTimeout(promise, ms, what) {
+  let timer;
+  const limit = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} took more than ${ms / 1000} s`)), ms);
+  });
+  promise.catch(() => {}); // a late rejection after the limit is ignored
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
 // The app list the tests use by default (see MaximoSession.routeAppList):
 // a reduced copy of Maximo's permission/modules and allowedappoptions answers,
 // with both standard and (Oil) versions, shared aliases ("pm", "sr", "im") and
@@ -169,10 +180,15 @@ class MaximoSession {
     this.appListMode = "fixture";
     this.appListModules = null;
     this.appListRequests = 0;
+    // A URL glob (not a function), so only these requests are intercepted:
+    // a function matcher makes Playwright intercept every request in the
+    // browser, and runs with that have hung mid-navigation.
     await this.context.route(
-      (url) => /\/oslc\/permission\/(modules|allowedappoptions)$/.test(url.pathname),
+      "**/oslc/permission/**",
       async (route) => {
         const req = route.request();
+        const path = new URL(req.url()).pathname;
+        if (!/\/oslc\/permission\/(modules|allowedappoptions)$/.test(path)) return route.continue();
         if (!req.headers()["x-magic-search"]) return route.continue();
         this.appListRequests++;
         if (this.appListMode === "real") return route.continue();
@@ -209,7 +225,8 @@ class MaximoSession {
     await page.bringToFront();
     await this.closePalette(page);
     try {
-      await page.goto("about:blank", { timeout: 15_000, waitUntil: "commit" });
+      // Hard limit too: a hung browser can leave goto unsettled past its timeout.
+      await withTimeout(page.goto("about:blank", { timeout: 15_000, waitUntil: "commit" }), 16_000, "leaving the page");
     } catch (e) {
       console.warn(`[maximo] the Maximo tab didn't navigate (${e.message.split("\n")[0]}); using a fresh tab`);
       page = await this.replaceSharedTab();
@@ -234,9 +251,16 @@ class MaximoSession {
   // Closes the browser but stays signed in: a later browser in this run may
   // reuse the login. global-teardown.js signs out at the end of the run.
   async stop() {
-    if (this.context) await this.saveSession().catch(() => {});
-    await this.context?.close().catch(() => {});
-    if (this.profileDir) fs.rmSync(this.profileDir, { recursive: true, force: true });
+    if (this.context) await withTimeout(this.saveSession(), 5_000, "saving the login").catch(() => {});
+    // Don't let a hung browser hold up the end of the run.
+    await withTimeout(this.context ? this.context.close() : Promise.resolve(), 10_000, "closing the browser").catch((e) =>
+      console.warn(`[maximo] ${e.message}; leaving it`)
+    );
+    try {
+      if (this.profileDir) fs.rmSync(this.profileDir, { recursive: true, force: true });
+    } catch (_) {
+      // Still in use by a browser that didn't close; it's in the temp folder.
+    }
   }
 
   // Maximo answers with this page when the login has too many UI sessions.
