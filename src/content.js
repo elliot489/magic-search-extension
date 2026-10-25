@@ -99,25 +99,30 @@
       return items.filter(({ option }) => optionMatches(option, query));
     }
 
-    // Live filter: hide options that don't match the typed text. With an
-    // insert verb, the list is marked so each option shows "New record".
-    input.addEventListener("input", () => {
-      const visible = new Set(matches());
+    // Live filter: hide options that don't match the typed text and highlight
+    // the top one (what Enter opens). With an insert verb, the list is marked
+    // so each option shows "New record".
+    function refresh() {
+      const remaining = matches();
+      const visible = new Set(remaining);
       list.classList.toggle("is-insert", parseQuery(input.value).insert);
       for (const item of items) {
         item.li.hidden = !visible.has(item);
-        item.li.classList.toggle("is-only-match", visible.size === 1 && visible.has(item));
+        item.li.classList.toggle("is-selected", item === remaining[0]);
+        item.li.setAttribute("aria-selected", String(item === remaining[0]));
       }
-      list.hidden = visible.size === 0;
-    });
+      list.hidden = remaining.length === 0;
+    }
+    input.addEventListener("input", refresh);
+    refresh();
 
-    // Enter opens the app, but only when exactly one option is left.
+    // Enter opens the top remaining option; it does nothing when none match.
     input.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
       e.stopPropagation();
       const remaining = matches();
-      if (remaining.length !== 1) return;
+      if (remaining.length === 0) return;
       const url = appUrl(remaining[0].option.app, parseQuery(input.value).insert);
       previousFocus = null;
       close();

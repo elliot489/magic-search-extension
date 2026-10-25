@@ -77,10 +77,43 @@ test.describe("filtering", () => {
     await expect(palette(page).list).toBeHidden();
   });
 
-  test("Enter does nothing when several apps match", async ({ page }) => {
+  test("the top match is highlighted", async ({ page }) => {
+    await openPalette(page);
+    const selected = page.locator(".magic-search-option.is-selected");
+    await expect(selected).toHaveText(["Locations"]);
+    await palette(page).input.pressSequentially("orders");
+    await expect(palette(page).options).toHaveText(["Work Orders", "Purchase Orders"]);
+    await expect(selected).toHaveText(["Work Orders"]);
+  });
+
+  test("Enter opens the top match when several apps match", async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("o");
+    await expect(palette(page).options).toHaveCount(3);
+    await Promise.all([
+      page.waitForURL((url) => url.searchParams.get("value") === "location"),
+      palette(page).input.press("Enter"),
+    ]);
+    expect(new URL(page.url()).searchParams.get("additionalevent")).toBeNull();
+    await page.waitForLoadState("load");
+  });
+
+  test("new + several matches opens the top one ready to insert", async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("new orders");
+    await expect(palette(page).options).toHaveText(["Work Orders", "Purchase Orders"]);
+    await Promise.all([
+      page.waitForURL((url) => url.searchParams.get("value") === "wotrack"),
+      palette(page).input.press("Enter"),
+    ]);
+    expect(new URL(page.url()).searchParams.get("additionalevent")).toBe("insert");
+    await page.waitForLoadState("load");
+  });
+
+  test("Enter does nothing when nothing matches", async ({ page }) => {
     await openPalette(page);
     const before = page.url();
-    await palette(page).input.pressSequentially("o");
+    await palette(page).input.pressSequentially("zzz");
     await palette(page).input.press("Enter");
     await expect(palette(page).backdrop).toBeVisible();
     expect(page.url()).toBe(before);
@@ -158,6 +191,7 @@ test.describe("inserting new records", () => {
     await palette(page).input.pressSequentially("new");
     await expect(palette(page).options).toHaveCount(0);
     await palette(page).input.press("Enter");
+    await expect(palette(page).backdrop).toBeVisible();
     expect(page.url()).toBe(before);
   });
 });

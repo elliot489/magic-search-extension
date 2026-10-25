@@ -13,11 +13,11 @@ Under the search box is a list of apps (hardcoded for now):
 | Work Orders | `wotrack` | `wo` |
 | Purchase Orders | `po` | `po` |
 
-Typing filters the list (case-insensitive): an app stays if its name contains the text, or one of its aliases starts with it. So `work` and `wo` both leave Work Orders, and `pu` and `po` both leave Purchase Orders. When only one app is left, press **Enter** to open it in its list view. Enter does nothing if zero or several apps match.
+Typing filters the list (case-insensitive): an app stays if its name contains the text, or one of its aliases starts with it. So `work` and `wo` both leave Work Orders, and `pu` and `po` both leave Purchase Orders. The top app in the list is highlighted, and **Enter** opens it in its list view, so there's no need to narrow it down to one (`o` + Enter opens Locations). Enter does nothing if no apps match.
 
 ### Insert a new record
 
-Start with **new**, **insert** or **create** and a space, then the app: `new wo`, `create work order`, `insert work`, `new po`. Each option then shows a **New record** label, and Enter opens the app ready to insert a new record.
+Start with **new**, **insert** or **create** and a space, then the app: `new wo`, `create work order`, `insert work`, `new po`. Each option then shows a **New record** label, and Enter opens the top app ready to insert a new record.
 
 Apps open with the Manage shell URL `.../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=<app>#/main`, for example `value=location`, `value=asset`, `value=wotrack` or `value=po`. To insert a new record, `&additionalevent=insert` is added after the app name.
 

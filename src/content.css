@@ -55,8 +55,8 @@
   color: #ffffff;
 }
 
-/* The only remaining option: Enter will open it. */
-.magic-search-option.is-only-match {
+/* The top remaining option: Enter will open it. */
+.magic-search-option.is-selected {
   background: #333333;
 }
 
