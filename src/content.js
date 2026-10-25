@@ -77,6 +77,10 @@
   let previousFocus = null;
   // Set while the palette is open; re-renders it when the app list changes.
   let rerenderOpenPalette = null;
+  // Set while the palette is open: its input, and its key handler (so keys
+  // that land in a Maximo field instead can be passed on to it).
+  let paletteInput = null;
+  let paletteKey = null;
   Catalog.onUpdate(() => rerenderOpenPalette && rerenderOpenPalette());
 
   // Find the element that really has focus, looking inside same-origin
@@ -238,7 +242,7 @@
     // Up/Down move the highlight; Space after them fills in the app's name.
     // Enter opens the highlighted entry (or runs the refresh command); it
     // does nothing when nothing matches.
-    input.addEventListener("keydown", (e) => {
+    function onPaletteKey(e) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
@@ -270,7 +274,10 @@
       // jump within the page and load nothing, so reload instead.
       if (url === location.href) location.reload();
       else location.assign(url);
-    });
+    }
+    input.addEventListener("keydown", onPaletteKey);
+    paletteInput = input;
+    paletteKey = onPaletteKey;
 
     // Clicking the list or padding mustn't take focus away from the input.
     box.addEventListener("mousedown", (e) => {
@@ -312,6 +319,8 @@
     backdrop.remove();
     backdrop = null;
     rerenderOpenPalette = null;
+    paletteInput = null;
+    paletteKey = null;
 
     // Put the cursor back where the user was before opening the palette.
     if (previousFocus && previousFocus.isConnected) {
@@ -337,7 +346,45 @@
       e.preventDefault();
       e.stopPropagation();
       close();
+    } else if (backdrop && paletteInput && e.target !== paletteInput) {
+      redirectToPalette(e);
     }
+  }
+
+  // While the palette is open, Maximo can move focus to one of its own fields
+  // (e.g. when a page finishes loading) between key presses. Such a key is
+  // kept from Maximo and applied to the palette instead.
+  function redirectToPalette(e) {
+    if (MagicSearchShortcut.isModifierCode(e.code)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const input = paletteInput;
+    window.focus();
+    input.focus();
+    const typing = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (["Enter", "ArrowUp", "ArrowDown"].includes(e.key) || (e.key === " " && typing)) {
+      // The palette's own handler; preventDefault means it handled the key.
+      let handled = false;
+      paletteKey({
+        key: e.key,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        preventDefault: () => (handled = true),
+        stopPropagation() {},
+      });
+      if (handled || e.key !== " ") return;
+    }
+    if (typing) {
+      input.value += e.key;
+    } else if (e.key === "Backspace") {
+      input.value = input.value.slice(0, -1);
+    } else {
+      return;
+    }
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event("input"));
   }
 
   // Maximo's UI lives in a same-origin iframe (/maximo/ui/?type=embedded), and
