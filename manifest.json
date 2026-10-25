@@ -22,6 +22,7 @@
         "src/shortcut.js",
         "src/apps.js",
         "src/catalog.js",
+        "src/actions.js",
         "src/content.js"
       ],
       "css": [

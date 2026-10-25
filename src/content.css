@@ -105,3 +105,46 @@
   font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #a8a8a8;
 }
+
+/* The input, after the current app's tag when searching its actions. */
+.magic-search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.magic-search-input-row .magic-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.magic-search-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  max-width: 45%;
+  padding: 6px 6px 6px 10px;
+  border-radius: 6px;
+  background: #0f62fe;
+  color: #ffffff;
+  font: 14px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.magic-search-tag[hidden] {
+  display: none;
+}
+
+.magic-search-tag-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}

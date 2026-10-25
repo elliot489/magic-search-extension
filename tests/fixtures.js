@@ -388,7 +388,10 @@ const optionsPage = (page) => ({
 
 // The content script loads at document_idle, so the first key press can come
 // too early on a slow Maximo page. Press until the palette shows (bounded).
-async function openPalette(page, keys = DEFAULT_KEYS) {
+// Opened inside an app, the palette searches that app's actions (it shows the
+// app's tag); unless { context: true }, this switches it to normal app search
+// with Backspace, as most tests expect.
+async function openPalette(page, keys = DEFAULT_KEYS, { context = false } = {}) {
   const { backdrop } = palette(page);
   try {
     await expect(async () => {
@@ -397,6 +400,11 @@ async function openPalette(page, keys = DEFAULT_KEYS) {
     }).toPass({ timeout: 20_000 });
   } catch (e) {
     throw new Error(`${keys} didn't open the palette. Frames:\n${await frameReport(page)}`, { cause: e });
+  }
+  const tag = page.locator(".magic-search-tag");
+  if (!context && (await tag.isVisible())) {
+    await palette(page).input.press("Backspace");
+    await expect(tag).toBeHidden();
   }
 }
 
@@ -623,6 +631,38 @@ async function waitForMaximoIdle(page, { quietMs = 1_000, timeout = 15_000 } = {
   }
 }
 
+// Stop Maximo running the actions the palette clicks in its frame (the click
+// is recorded instead), so tests can check which action Enter picks.
+// Returns { clicked(): eventtypes clicked so far, stop() }.
+async function blockMaximoActions(page) {
+  const html = maximoFrame(page).locator("html");
+  await html.evaluate((root) => {
+    const win = root.ownerDocument.defaultView;
+    root.removeAttribute("data-magic-search-action");
+    win.__magicSearchBlocked = [];
+    win.__magicSearchBlocker = (e) => {
+      const a = e.target.closest && e.target.closest("a");
+      if (!a || !root.hasAttribute("data-magic-search-action")) return;
+      win.__magicSearchBlocked.push(a.getAttribute("eventtype"));
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    win.addEventListener("click", win.__magicSearchBlocker, true);
+  });
+  return {
+    clicked: () => html.evaluate((root) => root.ownerDocument.defaultView.__magicSearchBlocked || []),
+    lastAction: () => html.getAttribute("data-magic-search-action"),
+    stop: () =>
+      html
+        .evaluate((root) => {
+          const win = root.ownerDocument.defaultView;
+          win.removeEventListener("click", win.__magicSearchBlocker, true);
+          root.removeAttribute("data-magic-search-action");
+        })
+        .catch(() => {}),
+  };
+}
+
 // True when el has real keyboard focus (its frame is focused and it's the active element).
 function hasRealFocus(locator) {
   return locator.evaluate((el) => el.ownerDocument.hasFocus() && el.ownerDocument.activeElement === el);
@@ -642,6 +682,7 @@ module.exports = {
   expectFilteredBy,
   appListState,
   waitForMaximoIdle,
+  blockMaximoActions,
   FIXTURE_MODULES,
   FIXTURE_OPTIONS,
   hasRealFocus,
