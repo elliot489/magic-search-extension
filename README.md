@@ -2,7 +2,7 @@
 
 A Chrome extension that adds a command palette style search box to Maximo Manage.
 
-It only runs on pages whose URL contains `maximo/oslc/graphite/manage-shell`. Press **Ctrl+Space** to open the search box. Press **Escape** or click the dimmed background to close it.
+It only runs on pages whose URL contains `maximo/oslc/graphite/manage-shell`. Press **Ctrl+Space** to open the search box, even while the cursor is in a Maximo text field (Maximo's UI sits in an iframe; the extension listens there too). Press **Escape** or click the dimmed background to close it.
 
 Under the search box is a list of apps: **Locations**, **Assets** and **Work Orders** (hardcoded for now). Typing filters the list (case-insensitive). When only one app is left, press **Enter** to open it. Enter does nothing if zero or several apps match.
 
@@ -18,11 +18,17 @@ Apps open with the Manage shell URL `.../maximo/oslc/graphite/manage-shell/index
 
 After changing any files, click the reload icon on the extension's card in `chrome://extensions`, then reload the Maximo tab.
 
-> On macOS, Ctrl+Space may be taken by the input source switcher. If nothing happens, turn that shortcut off in System Settings > Keyboard > Keyboard Shortcuts > Input Sources.
+> On macOS, Ctrl+Space may be taken by the input source switcher. If nothing happens, turn that shortcut off in System Settings > Keyboard > Keyboard Shortcuts > Input Sources, or pick a different shortcut (below).
+
+## Change the shortcut
+
+Open the extension's options: in `chrome://extensions` click **Details** on the extension's card, then **Extension options** (or right-click the extension's toolbar icon and choose **Options**). Click **Record new shortcut** and press the keys you want. It must include Ctrl, Alt/Option or Cmd, or be an F-key. **Reset to Ctrl+Space** puts the default back.
+
+The setting is saved with Chrome sync and applies straight away to open Maximo tabs, no reload needed.
 
 ## Tests
 
-The tests drive a visible Chromium window, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering and opening apps.
+The tests drive Chromium, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering and opening apps, the shortcut inside Maximo's iframe, and changing the shortcut on the options page (they put Ctrl+Space back afterwards).
 
 One-time setup (Node 20.12 or newer):
 
@@ -38,6 +44,12 @@ Run them with:
 
 ```sh
 npm test
+```
+
+They run headless by default (Chromium's new headless mode, which supports extensions). To watch the browser window instead:
+
+```sh
+HEADED=1 npm test
 ```
 
 After a failed run, `npx playwright show-report` shows a screenshot and trace for each failure.
