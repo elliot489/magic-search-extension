@@ -3,8 +3,7 @@ const {
   expect,
   palette,
   openPalette,
-  appUrl,
-  iframeTextField,
+  gotoApp,
   hasRealFocus,
   DEFAULT_KEYS,
   DEFAULT_LABEL,
@@ -76,11 +75,7 @@ test.describe("custom shortcut", () => {
   test("the new shortcut works inside Maximo's iframe", async ({ options, page }) => {
     await options.record(CUSTOM);
     await page.bringToFront();
-    await page.goto(appUrl("wotrack"));
-    await page.waitForLoadState("load");
-
-    const field = iframeTextField(page);
-    await expect(field).toBeVisible({ timeout: 30_000 });
+    const field = await gotoApp(page, "wotrack");
     await field.click();
     await expect.poll(() => hasRealFocus(field)).toBe(true);
 
