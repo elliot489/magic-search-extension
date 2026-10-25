@@ -212,10 +212,35 @@ const optionsPage = (page) => ({
 // too early on a slow Maximo page. Press until the palette shows (bounded).
 async function openPalette(page, keys = DEFAULT_KEYS) {
   const { backdrop } = palette(page);
-  await expect(async () => {
-    if (!(await backdrop.isVisible())) await page.keyboard.press(keys);
-    await expect(backdrop).toBeVisible({ timeout: 1_000 });
-  }).toPass({ timeout: 20_000 });
+  try {
+    await expect(async () => {
+      if (!(await backdrop.isVisible())) await page.keyboard.press(keys);
+      await expect(backdrop).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
+  } catch (e) {
+    throw new Error(`${keys} didn't open the palette. Frames:\n${await frameReport(page)}`, { cause: e });
+  }
+}
+
+// One line per frame: whether the extension is listening there (it marks
+// <html data-magic-search="listening">), what has focus, and the URL.
+async function frameReport(page) {
+  const lines = await Promise.all(
+    page.frames().map(async (f) => {
+      const info = await f
+        .evaluate(() => ({
+          listening: document.documentElement?.getAttribute("data-magic-search") || "no",
+          focus: document.hasFocus(),
+          active: document.activeElement
+            ? `${document.activeElement.tagName}${document.activeElement.id ? "#" + document.activeElement.id : ""}`
+            : "-",
+          ready: document.readyState,
+        }))
+        .catch((err) => ({ error: err.message.split("\n")[0] }));
+      return `  ${f === page.mainFrame() ? "top" : "frame"} ${f.url().slice(0, 100)} ${JSON.stringify(info)}`;
+    })
+  );
+  return lines.join("\n");
 }
 
 // Maximo's own UI iframe (/maximo/ui/?type=embedded) inside the Manage shell.

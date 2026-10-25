@@ -13,14 +13,26 @@ const {
 // session, so keep this list short. This file runs last (alphabetical order).
 test.describe("Maximo really opens what Enter asks for", () => {
   async function enterAndLoad(page, query, app) {
+    // Let the page the previous test loaded finish first: Maximo can move the
+    // cursor when it's done loading.
+    await page.waitForLoadState("load");
+    await expect
+      .poll(() =>
+        maximoFrame(page)
+          .locator("body")
+          .evaluate((b) => b.ownerDocument.readyState)
+          .catch(() => "loading")
+      )
+      .toBe("complete");
     await openPalette(page);
     await palette(page).input.pressSequentially(query);
-    await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === app),
-      palette(page).input.press("Enter"),
-    ]);
-    await page.waitForLoadState("load");
-    return new URL(page.url());
+    await expect(palette(page).input).toHaveValue(query);
+    // Wait for the page load Enter starts (the URL may already name the app,
+    // or even be the same URL, which reloads).
+    await Promise.all([page.waitForEvent("load"), palette(page).input.press("Enter")]);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("value")).toBe(app);
+    return url;
   }
 
   test('"wo" + Enter opens the Work Orders list', async ({ page }) => {

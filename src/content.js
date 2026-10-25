@@ -196,6 +196,17 @@
       }
     });
 
+    // Keep the cursor in the search box while it's open: Maximo can move focus
+    // to its own fields when a page finishes loading, mid-typing.
+    input.addEventListener("blur", () => {
+      setTimeout(() => {
+        if (backdrop && input.isConnected && document.activeElement !== input) {
+          window.focus();
+          input.focus();
+        }
+      }, 0);
+    });
+
     document.body.appendChild(backdrop);
     // The shortcut may have come from inside an iframe: pull focus back up here.
     window.focus();
@@ -240,19 +251,31 @@
   const hookedDocuments = new WeakSet();
   const hookedFrames = new WeakSet();
 
+  // Listeners on a frame can disappear without a new window or a load event
+  // (e.g. when the page rewrites its document with document.open()). So the
+  // listener is added again often: on frame load, whenever a frame's document
+  // changes (see hookDocument), and when focus moves into a frame. Adding the
+  // same listener twice is a no-op.
   function hookWindow(win) {
+    if (!win) return;
     // Capture phase so Maximo's own key handlers don't swallow the shortcut.
-    // Added again on every frame load: when a frame goes from its first blank
-    // page to Maximo's page, Chrome may keep the window object but drop its
-    // listeners. Adding the same listener twice is a no-op.
     win.addEventListener("keydown", onKeyDown, true);
+    // Visible marker (for the tests' failure reports): this frame is listening.
+    try {
+      win.document.documentElement?.setAttribute("data-magic-search", "listening");
+    } catch (_) {}
   }
 
   function hookDocument(doc) {
     if (!doc || hookedDocuments.has(doc)) return;
     hookedDocuments.add(doc);
     doc.querySelectorAll("iframe, frame").forEach(hookFrame);
+    // The observer survives document.open(), which empties the document (and
+    // drops the window's listeners), so use each change to re-add ours.
     new MutationObserver((mutations) => {
+      if (doc.defaultView && doc.documentElement?.getAttribute("data-magic-search") !== "listening") {
+        hookWindow(doc.defaultView);
+      }
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
@@ -284,6 +307,18 @@
     hookFrameContents(frame);
   }
 
+  // Re-check every same-origin frame (cheap; everything here is idempotent).
+  function rehookAll(doc = document) {
+    for (const frame of doc.querySelectorAll("iframe, frame")) {
+      hookFrame(frame);
+      try {
+        if (frame.contentDocument) rehookAll(frame.contentDocument);
+      } catch (_) {}
+    }
+  }
+
   hookWindow(window);
   hookDocument(document);
+  // The top window loses focus when the cursor moves into a frame.
+  window.addEventListener("blur", () => rehookAll());
 })();
