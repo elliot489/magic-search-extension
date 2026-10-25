@@ -47,8 +47,6 @@ test.describe("custom shortcut", () => {
   test("the new shortcut opens the palette and the old one doesn't", async ({ options, page }) => {
     await options.record(CUSTOM);
     await page.bringToFront();
-    await page.reload();
-    await page.waitForLoadState("load");
 
     await openPalette(page, CUSTOM);
     await expect(palette(page).input).toBeFocused();

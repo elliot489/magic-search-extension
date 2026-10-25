@@ -1,4 +1,4 @@
-const { test, expect, palette, openPalette, expectFilteredBy, DEFAULT_KEYS } = require("./fixtures");
+const { test, expect, palette, openPalette, enterTarget, DEFAULT_KEYS } = require("./fixtures");
 
 test.describe("opening and closing", () => {
   test("Cmd/Ctrl+K opens the search box with the cursor in it", async ({ page }) => {
@@ -109,35 +109,26 @@ test.describe("filtering", () => {
     await openPalette(page);
     await palette(page).input.pressSequentially("a");
     await expect(palette(page).options).toHaveCount(3);
-    await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === "asset"),
-      palette(page).input.press("Enter"),
-    ]);
-    expect(new URL(page.url()).searchParams.get("additionalevent")).toBeNull();
-    await page.waitForLoadState("load");
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("asset");
+    expect(target.searchParams.get("additionalevent")).toBeNull();
   });
 
   test("new + several matches opens the top one ready to insert", async ({ page }) => {
     await openPalette(page);
     await palette(page).input.pressSequentially("new orders");
     await expect(palette(page).options).toHaveText(["Work Orders", "Purchase Orders"]);
-    await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === "wotrack"),
-      palette(page).input.press("Enter"),
-    ]);
-    expect(new URL(page.url()).searchParams.get("additionalevent")).toBe("insert");
-    await page.waitForLoadState("load");
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("wotrack");
+    expect(target.searchParams.get("additionalevent")).toBe("insert");
   });
 
   test('"o" + Enter opens Work Orders (word match beats Locations)', async ({ page }) => {
     await openPalette(page);
     await palette(page).input.pressSequentially("o");
-    await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === "wotrack"),
-      palette(page).input.press("Enter"),
-    ]);
-    expect(new URL(page.url()).searchParams.get("additionalevent")).toBeNull();
-    await page.waitForLoadState("load");
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("wotrack");
+    expect(target.searchParams.get("additionalevent")).toBeNull();
   });
 
   test("Enter does nothing when nothing matches", async ({ page }) => {
@@ -165,16 +156,13 @@ test.describe("opening apps", () => {
       await openPalette(page);
       await palette(page).input.pressSequentially(query);
       await expect(palette(page).options).toHaveCount(1);
-      await Promise.all([
-        page.waitForURL((url) => url.searchParams.get("value") === app),
-        palette(page).input.press("Enter"),
-      ]);
-      const url = new URL(page.url());
+      const target = await enterTarget(page);
+      expect(target.searchParams.get("value")).toBe(app);
+      const url = target;
       expect(url.pathname).toMatch(/manage-shell\/index\.html$/);
       expect(url.searchParams.get("event")).toBe("loadapp");
       // Plain matches open the list view, not a new record.
       expect(url.searchParams.get("additionalevent")).toBeNull();
-      await page.waitForLoadState("load");
     });
   }
 });
@@ -195,16 +183,13 @@ test.describe("inserting new records", () => {
       await palette(page).input.pressSequentially(query);
       await expect(palette(page).options).toHaveCount(1);
       await expect(palette(page).list).toHaveClass(/is-insert/);
-      await Promise.all([
-        page.waitForURL((url) => url.searchParams.get("value") === app),
-        palette(page).input.press("Enter"),
-      ]);
-      const url = new URL(page.url());
+      const target = await enterTarget(page);
+      expect(target.searchParams.get("value")).toBe(app);
+      const url = target;
       expect(url.pathname).toMatch(/manage-shell\/index\.html$/);
       expect(url.searchParams.get("event")).toBe("loadapp");
       expect(url.searchParams.get("value")).toBe(app);
       expect(url.searchParams.get("additionalevent")).toBe("insert");
-      await page.waitForLoadState("load");
     });
   }
 
@@ -264,20 +249,16 @@ test.describe("filtering an app's list", () => {
   ];
 
   for (const [query, app, filter] of opened) {
-    test(`"${query}" + Enter opens ${app} filtered on description "${filter}"`, async ({ page }) => {
+    test(`"${query}" + Enter goes to ${app} filtered on description "${filter}"`, async ({ page }) => {
       await openPalette(page);
       await palette(page).input.pressSequentially(query);
-      await Promise.all([
-        page.waitForURL((url) => url.searchParams.get("value") === app),
-        palette(page).input.press("Enter"),
-      ]);
-      const url = new URL(page.url());
+      const target = await enterTarget(page);
+      expect(target.searchParams.get("value")).toBe(app);
+      const url = target;
       expect(url.searchParams.get("event")).toBe("loadapp");
       expect(url.searchParams.get("value")).toBe(app);
       expect(url.searchParams.get("additionalevent")).toBe("useqbe");
       expect(url.searchParams.get("additionaleventvalue")).toBe(`description=${filter}`);
-      await page.waitForLoadState("load");
-      await expectFilteredBy(page, filter);
     });
   }
 
@@ -286,13 +267,10 @@ test.describe("filtering an app's list", () => {
     await palette(page).input.pressSequentially("new wo pump");
     await expect(selected(page)).toHaveText(["Work Orders"]);
     await expect(selected(page)).not.toHaveAttribute("data-filter");
-    await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === "wotrack"),
-      palette(page).input.press("Enter"),
-    ]);
-    const url = new URL(page.url());
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("wotrack");
+    const url = target;
     expect(url.searchParams.get("additionalevent")).toBe("insert");
     expect(url.searchParams.get("additionaleventvalue")).toBeNull();
-    await page.waitForLoadState("load");
   });
 });

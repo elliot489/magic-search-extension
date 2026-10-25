@@ -47,19 +47,13 @@ async function logIn(page) {
   await expect(password).toBeHidden({ timeout: 30_000 });
 }
 
-// Maximo limits how many UI sessions one login may have open, and every
-// load of a Maximo page starts one that isn't ended when a test closes its tab.
-// So after MAX_PAGE_LOADS loads, the next test starts a fresh browser and
-// signs in again (a new login gets a new allowance).
-const MAX_PAGE_LOADS = 25;
+// Every test shares one browser, one Maximo login and one Maximo tab, loaded
+// once. Maximo limits how many UI sessions a login may have and every page
+// load can start one, so most tests check where Enter *would* go without
+// loading it (see enterTarget); only a few tests really load Maximo pages.
+const SESSION_LIMIT_TEXT = /maximum number of sessions/i;
 
 class MaximoSession {
-  constructor() {
-    this.context = null;
-    this.pageLoads = 0;
-    this.testId = null;
-  }
-
   async start() {
     this.context = await chromium.launchPersistentContext("", {
       channel: "chromium",
@@ -67,41 +61,50 @@ class MaximoSession {
       viewport: { width: 1400, height: 900 },
       args: [`--disable-extensions-except=${ROOT}`, `--load-extension=${ROOT}`],
     });
-    // Count loads of Maximo's UI (the shell's iframe), top-level or in a frame.
-    this.context.on("request", (req) => {
-      if (req.isNavigationRequest() && /\/maximo\/ui\//.test(req.url())) this.pageLoads++;
-    });
-    await logIn(this.context.pages()[0] || (await this.context.newPage()));
-    this.pageLoads = 0;
+    this.page = this.context.pages()[0] || (await this.context.newPage());
+    // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
+    // "Leave site?": always leave. Other dialogs are dismissed as usual.
+    this.page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
+    await logIn(this.page);
+    await this.page.goto(SHELL_URL);
+    await this.page.waitForLoadState("load");
+    await this.checkSessionLimit();
   }
 
   async stop() {
-    if (!this.context) return;
-    // Best effort: end the login on the server so its sessions are freed now.
-    await this.context.request.get(new URL("oslc/logout", BASE).toString(), { timeout: 5_000 }).catch(() => {});
-    await this.context.close().catch(() => {});
-    this.context = null;
+    await this.context?.close().catch(() => {});
   }
 
-  // The browser context for the current test. Decided once per test, so every
-  // fixture in one test gets the same context.
-  async forTest() {
-    const id = test.info().testId;
-    if (id !== this.testId) {
-      this.testId = id;
-      if (this.pageLoads >= MAX_PAGE_LOADS) {
-        await this.stop();
-        await this.start();
-      }
+  // Maximo answers with this page when the login has too many UI sessions.
+  async checkSessionLimit() {
+    const texts = await Promise.all(
+      this.page.frames().map((f) => f.locator("body").innerText({ timeout: 2_000 }).catch(() => ""))
+    );
+    if (texts.some((t) => SESSION_LIMIT_TEXT.test(t))) {
+      throw new Error(
+        'Maximo says "You have reached the maximum number of sessions allowed for a user". ' +
+          "Wait for old sessions to time out (or raise the limit on the server), then run again."
+      );
     }
-    return this.context;
+  }
+
+  // The shared tab, ready for the next test: wherever the last test left it,
+  // with the palette closed. No reload.
+  async forTest() {
+    const page = this.page;
+    await page.bringToFront();
+    const backdrop = page.locator(".magic-search-backdrop");
+    if (await backdrop.count()) {
+      await page.keyboard.press("Escape");
+      await backdrop.evaluateAll((els) => els.forEach((el) => el.remove())).catch(() => {});
+    }
+    return page;
   }
 }
-
 const test = base.extend({
-  // One Chromium browser with the unpacked extension loaded, signed in and
-  // shared by the tests (renewed now and then, see MaximoSession). Headless
-  // uses Chromium's new headless mode (channel "chromium"), which supports
+  // One Chromium browser with the unpacked extension loaded, signed in once,
+  // with one Maximo tab shared by every test in the run. Headless uses
+  // Chromium's new headless mode (channel "chromium"), which supports
   // extensions.
   maximo: [
     async ({}, use) => {
@@ -113,8 +116,7 @@ const test = base.extend({
     { scope: "worker" },
   ],
 
-  // The unpacked extension's ID, read from chrome://extensions. It comes from
-  // the folder path, so it stays the same when the browser is renewed.
+  // The unpacked extension's ID, read from chrome://extensions.
   extensionId: [
     async ({ maximo }, use) => {
       const page = await maximo.context.newPage();
@@ -128,24 +130,18 @@ const test = base.extend({
     { scope: "worker" },
   ],
 
-  // The extension's options page, open in its own tab.
+  // The extension's options page, open in its own tab (not a Maximo page).
   options: async ({ maximo, extensionId }, use) => {
-    const context = await maximo.forTest();
-    const page = await context.newPage();
+    const page = await maximo.context.newPage();
     await page.goto(`chrome-extension://${extensionId}/src/options.html`);
     await expect(page.locator("#current")).not.toHaveText("…");
     await use(optionsPage(page));
     await page.close();
   },
 
-  // Each test gets a fresh Manage shell page.
+  // The shared Maximo tab (not reloaded between tests).
   page: async ({ maximo }, use) => {
-    const context = await maximo.forTest();
-    const page = await context.newPage();
-    await page.goto(SHELL_URL);
-    await page.waitForLoadState("load");
-    await use(page);
-    await page.close();
+    await use(await maximo.forTest());
   },
 });
 
@@ -197,11 +193,16 @@ function iframeTextField(page) {
 }
 
 // Open an app in the Manage shell and wait for a text field in Maximo's iframe.
-// Maximo sometimes ignores loadapp and shows the Start Center instead, so
-// retry the navigation a few times before giving up.
+// Skipped when the shared tab already shows that app (saves a Maximo session).
+// Maximo sometimes shows the Start Center instead, so retry a few times.
 async function gotoApp(page, app) {
   test.info().setTimeout(test.info().timeout + 60_000);
   const field = iframeTextField(page);
+  const here = new URL(page.url());
+  if (here.searchParams.get("value") === app && !here.searchParams.get("additionalevent")) {
+    if (await field.isVisible({ timeout: 3_000 }).catch(() => false)) return field;
+    if (await field.waitFor({ state: "visible", timeout: 3_000 }).then(() => true, () => false)) return field;
+  }
   for (let attempt = 1; ; attempt++) {
     await page.goto(appUrl(app));
     await page.waitForLoadState("load");
@@ -292,6 +293,39 @@ async function expectFilteredBy(page, text) {
   }
 }
 
+// Press Enter in the palette and return the URL it navigates to, without
+// loading it: the request is answered with "204 No Content", which leaves the
+// page where it is (so no new Maximo session). Fails if Enter doesn't navigate.
+async function enterTarget(page) {
+  let resolve;
+  const target = new Promise((r) => (resolve = r));
+  const matcher = (url) =>
+    url.pathname.endsWith("/manage-shell/index.html") && url.searchParams.get("event") === "loadapp";
+  const handler = async (route) => {
+    if (!route.request().isNavigationRequest()) return route.continue();
+    resolve(new URL(route.request().url()));
+    await route.fulfill({ status: 204, body: "" });
+  };
+  await page.route(matcher, handler);
+  try {
+    await palette(page).input.press("Enter");
+    let timer;
+    const url = await Promise.race([
+      target,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Enter didn't open an app")), 10_000);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    // The palette closes as it navigates.
+    await expect(palette(page).backdrop).toHaveCount(0);
+    expect(url.pathname).toMatch(/manage-shell\/index\.html$/);
+    expect(url.searchParams.get("event")).toBe("loadapp");
+    return url;
+  } finally {
+    await page.unroute(matcher, handler);
+  }
+}
+
 // True when el has real keyboard focus (its frame is focused and it's the active element).
 function hasRealFocus(locator) {
   return locator.evaluate((el) => el.ownerDocument.hasFocus() && el.ownerDocument.activeElement === el);
@@ -306,6 +340,7 @@ module.exports = {
   maximoFrame,
   iframeTextField,
   gotoApp,
+  enterTarget,
   expectFilteredBy,
   hasRealFocus,
   SHELL_URL,
