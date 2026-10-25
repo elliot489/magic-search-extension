@@ -48,6 +48,13 @@ async function logIn(page) {
   await expect(password).toBeHidden({ timeout: 30_000 });
 }
 
+// The app list the tests use by default (see MaximoSession.routeAppList):
+// a reduced copy of Maximo's permission/modules and allowedappoptions answers,
+// with both standard and (Oil) versions, shared aliases ("pm", "sr", "im") and
+// apps the user can't insert into.
+const FIXTURE_MODULES = require("./data/permission-modules.json");
+const FIXTURE_OPTIONS = require("./data/allowed-app-options.json");
+
 // Every test shares one browser, one Maximo login and one Maximo tab, loaded
 // once. Maximo limits how many UI sessions a login may have and every page
 // load can start one, so most tests check where Enter *would* go without
@@ -96,6 +103,7 @@ class MaximoSession {
         true
       );
     });
+    await this.routeAppList();
     const saved = sessionFile.load();
     if (saved?.cookies?.length) await this.context.addCookies(saved.cookies).catch(() => {});
 
@@ -118,6 +126,11 @@ class MaximoSession {
     await this.page.goto(SHELL_URL);
     await this.page.waitForLoadState("load");
     await this.checkSessionLimit();
+    // Let the extension finish loading its app list before the first test.
+    await expect
+      .poll(() => this.page.locator("html").getAttribute("data-magic-search-apps"), { timeout: 30_000 })
+      .toMatch(/^saved:/)
+      .catch(() => console.warn("[maximo] the extension's app list didn't load before the tests started"));
   }
 
   // Keep the login and Maximo's sign-out URL for the rest of the run.
@@ -146,6 +159,44 @@ class MaximoSession {
       }
     }
     await page.waitForLoadState("load");
+  }
+
+  // The extension's own requests for the app list (marked with the
+  // x-magic-search header; Maximo's own menu requests are left alone) get:
+  //  "fixture" (default): the small list in tests/data, so results don't
+  //            depend on the test user's security;
+  //  "real":   Maximo's actual answer;
+  //  "fail":   HTTP 500.
+  // appListModules can replace the fixture modules (e.g. to drop a version).
+  async routeAppList() {
+    this.appListMode = "fixture";
+    this.appListModules = null;
+    this.appListRequests = 0;
+    await this.context.route(
+      (url) => /\/oslc\/permission\/(modules|allowedappoptions)$/.test(url.pathname),
+      async (route) => {
+        const req = route.request();
+        if (!req.headers()["x-magic-search"]) return route.continue();
+        this.appListRequests++;
+        if (this.appListMode === "real") return route.continue();
+        if (this.appListMode === "fail") return route.fulfill({ status: 500, body: "test: app list unavailable" });
+        const isModules = req.url().includes("/permission/modules");
+        const body = isModules ? this.appListModules || FIXTURE_MODULES : FIXTURE_OPTIONS;
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+      }
+    );
+  }
+
+  // Load the Manage shell again in the shared tab (a new Maximo page load, so
+  // the extension reads or fetches its app list again).
+  async reloadShell() {
+    const page = this.page;
+    await page.bringToFront();
+    await page.goto("about:blank");
+    await page.goto(SHELL_URL);
+    await page.waitForLoadState("load");
+    await this.checkSessionLimit();
+    return page;
   }
 
   // Closes the browser but stays signed in: a later browser in this run may
@@ -218,6 +269,34 @@ const test = base.extend({
     await expect(page.locator("#current")).not.toHaveText("…");
     await use(optionsPage(page));
     await page.close();
+  },
+
+  // Read and change the extension's storage (from an extension page, which is
+  // the only place chrome.storage is reachable from the tests).
+  ext: async ({ maximo, extensionId }, use) => {
+    async function run(fn, arg) {
+      const page = await maximo.context.newPage();
+      try {
+        await page.goto(`chrome-extension://${extensionId}/src/options.html`);
+        return await page.evaluate(fn, arg);
+      } finally {
+        await page.close();
+        await maximo.page.bringToFront();
+      }
+    }
+    const api = {
+      get: (area, keys = null) => run(([a, k]) => chrome.storage[a].get(k), [area, keys]),
+      set: (area, items) => run(([a, i]) => chrome.storage[a].set(i), [area, items]),
+      remove: (area, keys) => run(([a, k]) => chrome.storage[a].remove(k), [area, keys]),
+      // Saved app lists: { "apps:<origin>|<user>": { fetchedAt, apps } }.
+      savedLists: async () =>
+        Object.fromEntries(Object.entries(await api.get("local")).filter(([k]) => k.startsWith("apps:"))),
+      clearSavedLists: async () => {
+        const keys = Object.keys(await api.savedLists());
+        if (keys.length) await api.remove("local", keys);
+      },
+    };
+    await use(api);
   },
 
   // The shared Maximo tab (not reloaded between tests).
@@ -447,6 +526,12 @@ async function enterTarget(page) {
   }
 }
 
+// The extension's app list state on the page, e.g. "saved:20" or "builtin:4"
+// (set by src/catalog.js on <html data-magic-search-apps>).
+function appListState(page) {
+  return page.locator("html").getAttribute("data-magic-search-apps");
+}
+
 // True when el has real keyboard focus (its frame is focused and it's the active element).
 function hasRealFocus(locator) {
   return locator.evaluate((el) => el.ownerDocument.hasFocus() && el.ownerDocument.activeElement === el);
@@ -464,6 +549,9 @@ module.exports = {
   focusField,
   enterTarget,
   expectFilteredBy,
+  appListState,
+  FIXTURE_MODULES,
+  FIXTURE_OPTIONS,
   hasRealFocus,
   SHELL_URL,
   DEFAULT_KEYS,

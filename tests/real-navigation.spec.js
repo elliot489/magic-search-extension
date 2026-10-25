@@ -12,6 +12,14 @@ const {
 // page, to prove Maximo does what the URL asks. Each one starts a Maximo
 // session, so keep this list short. This file runs last (alphabetical order).
 test.describe("Maximo really opens what Enter asks for", () => {
+  // Use the standard versions of these apps (the test list defaults to Oil).
+  test.beforeEach(async ({ ext }) => {
+    await ext.set("sync", { appVariants: { "work order tracking": "WOTRACK", assets: "ASSET" } });
+  });
+  test.afterEach(async ({ ext }) => {
+    await ext.remove("sync", "appVariants");
+  });
+
   async function enterAndLoad(page, query, app) {
     // Let the page the previous test loaded finish first: Maximo can move the
     // cursor when it's done loading.

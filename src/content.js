@@ -4,43 +4,28 @@
   if (window.__magicSearchLoaded) return;
   window.__magicSearchLoaded = true;
 
-  // Hardcoded for now; this list will be filled in automatically later.
-  // Aliases are extra names that also match (as a prefix), e.g. "wo".
-  const OPTIONS = [
-    { label: "Locations", app: "LOCATION", aliases: [] },
-    { label: "Assets", app: "ASSET", aliases: [] },
-    { label: "Work Orders", app: "WOTRACK", aliases: ["wo"] },
-    { label: "Purchase Orders", app: "PO", aliases: ["po"] },
-  ];
+  // The apps come from MagicSearchCatalog (src/catalog.js): the user's Maximo
+  // apps, one per group (industry versions merged), with generated or edited
+  // aliases. Ranking is in MagicSearchApps.rankGroups (src/apps.js).
+  const Apps = MagicSearchApps;
+  const Catalog = MagicSearchCatalog;
 
   // Starting the query with one of these words (then a space) opens the app
   // ready to insert a new record, e.g. "new wo" or "create work order".
   const INSERT_VERBS = ["new", "insert", "create"];
+
+  // Typing "refresh" (or the start of it, 3+ letters) offers this command.
+  const REFRESH_COMMAND = "refresh";
 
   // Text after the app name filters the app's list: "assets first" opens
   // Assets with description = "first". Maximo URL parameters used for that:
   // &additionalevent=useqbe&additionaleventvalue=description=first
   const FILTER = { event: "useqbe", field: "description" };
 
-  // How well an option matches, best first; -1 means no match.
-  // 0: name or alias starts with the text ("a" -> Assets)
-  // 1: a later word in the name starts with it ("o" -> Work Orders)
-  // 2: the text appears anywhere else in the name
-  function matchRank(option, query) {
-    const label = option.label.toLowerCase();
-    if (label.startsWith(query) || option.aliases.some((alias) => alias.startsWith(query))) return 0;
-    if (label.split(/\s+/).some((word) => word.startsWith(query))) return 1;
-    if (label.includes(query)) return 2;
-    return -1;
-  }
-
-
-  // OPTIONS sorted best match first; ties keep the list order (sort is stable).
-  function rankOptions(query) {
-    return OPTIONS.map((option) => ({ option, rank: matchRank(option, query) }))
-      .filter(({ rank }) => rank >= 0)
-      .sort((a, b) => a.rank - b.rank)
-      .map(({ option }) => option);
+  // Ranked [{ group, alias }]; in insert mode only apps the user can insert into.
+  function rankFor(query, insert) {
+    const ranked = Apps.rankGroups(Catalog.groups(), query);
+    return insert ? ranked.filter((m) => m.group.app.canInsert) : ranked;
   }
 
   // Work out what the typed text asks for:
@@ -49,7 +34,10 @@
   // - The longest run of leading words that matches an app picks the app(s);
   //   any words after it are the filter ("work orders pump" -> filter "pump").
   //   In insert mode extra words are ignored.
+  // command: "refresh" when the text is (the start of) the refresh command.
   function interpret(text) {
+    const query = text.trim().toLowerCase();
+    const command = query.length >= 3 && REFRESH_COMMAND.startsWith(query) ? "refresh" : "";
     let words = text.trim().split(/\s+/).filter(Boolean);
     let insert = false;
     if (words.length > 1 && INSERT_VERBS.includes(words[0].toLowerCase())) {
@@ -57,12 +45,12 @@
       words = words.slice(1);
     }
     for (let n = words.length; n >= 1; n--) {
-      const matches = rankOptions(words.slice(0, n).join(" ").toLowerCase());
+      const matches = rankFor(words.slice(0, n).join(" "), insert);
       if (matches.length) {
-        return { insert, matches, filter: insert ? "" : words.slice(n).join(" ") };
+        return { insert, matches, filter: insert ? "" : words.slice(n).join(" "), command };
       }
     }
-    return { insert, matches: words.length ? [] : rankOptions(""), filter: "" };
+    return { insert, matches: words.length ? [] : rankFor("", insert), filter: "", command };
   }
 
   // URL that opens a Maximo application in the Manage shell, e.g.
@@ -87,6 +75,9 @@
 
   let backdrop = null;
   let previousFocus = null;
+  // Set while the palette is open; re-renders it when the app list changes.
+  let rerenderOpenPalette = null;
+  Catalog.onUpdate(() => rerenderOpenPalette && rerenderOpenPalette());
 
   // Find the element that really has focus, looking inside same-origin
   // iframes (Maximo's UI lives in one).
@@ -124,52 +115,94 @@
     list.className = "magic-search-list";
     list.setAttribute("role", "listbox");
 
-    const items = OPTIONS.map((option) => {
+    // What Enter does: the first entry shown (an app, or the refresh command).
+    let entries = [];
+    let refreshing = false;
+
+    function statusRow(text) {
       const li = document.createElement("li");
-      li.className = "magic-search-option";
-      li.setAttribute("role", "option");
-      li.textContent = option.label;
-      list.appendChild(li);
-      return { option, li };
-    });
-
-    const itemFor = new Map(items.map((item) => [item.option, item]));
-    function matches() {
-      return interpret(input.value).matches.map((option) => itemFor.get(option));
+      li.className = "magic-search-status";
+      li.textContent = text;
+      return li;
     }
 
-    // Live filter: hide options that don't match the typed text and highlight
-    // the top one (what Enter opens). With an insert verb, the list is marked
-    // so each option shows "New record"; with a filter, the top option shows it.
-    function refresh() {
-      const { insert, filter } = interpret(input.value);
-      const remaining = matches();
-      const visible = new Set(remaining);
+    // Show the top matches (best first, top one highlighted). With an insert
+    // verb the list is marked so each option shows "New record"; with a
+    // filter, the top option shows it. When an alias (not the name) matched,
+    // it's shown after the label, e.g. "Item Master · im".
+    function render(status) {
+      const { insert, filter, matches, command } = interpret(input.value);
+      entries = matches.slice(0, Apps.SHOW_TOP).map((m) => ({ type: "app", ...m }));
+      if (command) {
+        const cmd = { type: "command" };
+        if (input.value.trim().toLowerCase() === REFRESH_COMMAND) entries.unshift(cmd);
+        else entries.push(cmd);
+        entries = entries.slice(0, Apps.SHOW_TOP);
+      }
       list.classList.toggle("is-insert", insert);
-      // Show matches in ranked order, then the hidden rest.
-      for (const item of [...remaining, ...items.filter((it) => !visible.has(it))]) {
-        list.appendChild(item.li);
-      }
-      for (const item of items) {
-        item.li.hidden = !visible.has(item);
-        item.li.classList.toggle("is-selected", item === remaining[0]);
-        item.li.setAttribute("aria-selected", String(item === remaining[0]));
-        if (filter && item === remaining[0]) item.li.dataset.filter = filter;
-        else delete item.li.dataset.filter;
-      }
-      list.hidden = remaining.length === 0;
+      const rows = entries.map((entry, index) => {
+        const li = document.createElement("li");
+        li.className = "magic-search-option";
+        li.setAttribute("role", "option");
+        const selected = index === 0;
+        li.classList.toggle("is-selected", selected);
+        li.setAttribute("aria-selected", String(selected));
+        const label = document.createElement("span");
+        label.className = "magic-search-label";
+        if (entry.type === "command") {
+          li.classList.add("magic-search-command");
+          label.textContent = "Refresh app list";
+        } else {
+          li.dataset.app = entry.group.app.id;
+          label.textContent = entry.group.label;
+          if (entry.alias) label.dataset.alias = entry.alias;
+          if (filter && selected) li.dataset.filter = filter;
+        }
+        li.appendChild(label);
+        return li;
+      });
+      if (status) rows.push(statusRow(status));
+      list.replaceChildren(...rows);
+      list.hidden = rows.length === 0;
     }
-    input.addEventListener("input", refresh);
-    refresh();
+    input.addEventListener("input", () => render());
+    render();
+    // The list may arrive (or change) while the palette is open.
+    rerenderOpenPalette = () => {
+      if (!refreshing) render();
+    };
 
-    // Enter opens the top remaining option; it does nothing when none match.
+    async function runRefresh() {
+      refreshing = true;
+      input.value = "";
+      render("Refreshing the app list…");
+      let message;
+      try {
+        const count = await Catalog.refresh();
+        message = `Loaded ${count} apps`;
+      } catch (err) {
+        message = "Couldn't load the app list from Maximo";
+        console.warn("[Magic Search]", err);
+      }
+      refreshing = false;
+      if (backdrop && input.isConnected) render(message);
+    }
+
+    // Enter opens the top entry (or runs the refresh command); it does
+    // nothing when nothing matches.
     input.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
       e.stopPropagation();
-      const { insert, matches: remaining, filter } = interpret(input.value);
-      if (remaining.length === 0) return;
-      const url = appUrl(remaining[0].app, { insert, filter });
+      if (refreshing) return;
+      const { insert, filter } = interpret(input.value);
+      const top = entries[0];
+      if (!top) return;
+      if (top.type === "command") {
+        runRefresh();
+        return;
+      }
+      const url = appUrl(top.group.app.id, { insert, filter });
       previousFocus = null;
       close();
       // Same address as now (the app is already open): assign() would only
@@ -217,6 +250,7 @@
     if (!backdrop) return;
     backdrop.remove();
     backdrop = null;
+    rerenderOpenPalette = null;
 
     // Put the cursor back where the user was before opening the palette.
     if (previousFocus && previousFocus.isConnected) {
