@@ -1,0 +1,91 @@
+const { test, expect, palette, openPalette } = require("./fixtures");
+
+test.describe("opening and closing", () => {
+  test("Ctrl+Space opens the search box with the cursor in it", async ({ page }) => {
+    await openPalette(page);
+    const { input, options } = palette(page);
+    await expect(input).toBeFocused();
+    await expect(options).toHaveText(["Locations", "Assets", "Work Orders"]);
+  });
+
+  test("Escape closes it", async ({ page }) => {
+    await openPalette(page);
+    await page.keyboard.press("Escape");
+    await expect(palette(page).backdrop).toHaveCount(0);
+  });
+
+  test("Ctrl+Space again closes it", async ({ page }) => {
+    await openPalette(page);
+    await page.keyboard.press("Control+Space");
+    await expect(palette(page).backdrop).toHaveCount(0);
+  });
+
+  test("clicking the dimmed backdrop closes it", async ({ page }) => {
+    await openPalette(page);
+    await page.mouse.click(10, 10);
+    await expect(palette(page).backdrop).toHaveCount(0);
+  });
+
+  test("clicking inside the box keeps it open", async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.click();
+    await expect(palette(page).backdrop).toBeVisible();
+  });
+});
+
+test.describe("filtering", () => {
+  const cases = [
+    ["Loc", ["Locations"]],
+    ["ass", ["Assets"]],
+    ["WORK", ["Work Orders"]],
+    ["o", ["Locations", "Work Orders"]],
+  ];
+
+  for (const [query, expected] of cases) {
+    test(`"${query}" leaves ${expected.join(", ")}`, async ({ page }) => {
+      await openPalette(page);
+      await palette(page).input.pressSequentially(query);
+      await expect(palette(page).options).toHaveText(expected);
+    });
+  }
+
+  test("no match hides the list", async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("zzz");
+    await expect(palette(page).options).toHaveCount(0);
+    await expect(palette(page).list).toBeHidden();
+  });
+
+  test("Enter does nothing when several apps match", async ({ page }) => {
+    await openPalette(page);
+    const before = page.url();
+    await palette(page).input.pressSequentially("o");
+    await palette(page).input.press("Enter");
+    await expect(palette(page).backdrop).toBeVisible();
+    expect(page.url()).toBe(before);
+  });
+});
+
+test.describe("opening apps", () => {
+  const apps = [
+    ["Loc", "location"],
+    ["Ass", "asset"],
+    ["Work", "wotrack"],
+  ];
+
+  for (const [query, app] of apps) {
+    test(`"${query}" + Enter opens the ${app} app`, async ({ page }) => {
+      await openPalette(page);
+      await palette(page).input.pressSequentially(query);
+      await expect(palette(page).options).toHaveCount(1);
+      await Promise.all([
+        page.waitForURL((url) => url.searchParams.get("value") === app),
+        palette(page).input.press("Enter"),
+      ]);
+      const url = new URL(page.url());
+      expect(url.pathname).toMatch(/manage-shell\/index\.html$/);
+      expect(url.searchParams.get("event")).toBe("loadapp");
+      await page.waitForLoadState("load");
+    });
+  }
+});
