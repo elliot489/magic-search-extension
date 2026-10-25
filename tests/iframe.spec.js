@@ -48,6 +48,25 @@ test.describe("shortcut inside Maximo's iframe", () => {
     await expect(palette(page).backdrop).toHaveCount(0);
   });
 
+  test("keys that land in a Maximo field while the palette is open go to the palette", async ({ page }) => {
+    const field = await focusField(page);
+    await field.fill("");
+    await openPalette(page);
+    // Like Maximo moving the cursor to its own field mid-typing: focus the
+    // field and send key presses to it before the palette can take focus back.
+    await field.evaluate((el) => {
+      el.focus();
+      for (const key of ["p", "m", "ArrowDown"]) {
+        el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      }
+    });
+    await expect(palette(page).input).toHaveValue("pm");
+    await expect(page.locator(".magic-search-option.is-selected")).toHaveText(["Prioritization Matrix (Oil)"]);
+    await expect(palette(page).input).toBeFocused();
+    await expect(field).toHaveValue("");
+    await page.keyboard.press("Escape");
+  });
+
   test("still works after the iframe reloads", async ({ page }) => {
     await focusField(page);
     await openPalette(page);

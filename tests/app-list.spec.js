@@ -29,11 +29,12 @@ async function savedEntry(ext) {
 }
 
 // Back to the normal state for the next tests: the test list, saved and in use.
-async function restore(maximo, ext, page) {
+// (reloadShell closes the palette first.)
+async function restore(maximo, ext) {
   maximo.appListMode = "fixture";
   maximo.appListModules = null;
   await ext.clearSavedLists();
-  await maximo.reloadShell();
+  const page = await maximo.reloadShell();
   await expect.poll(() => appListState(page), { timeout: 30_000 }).toBe(SAVED);
 }
 
@@ -53,7 +54,7 @@ test.describe("app list from Maximo", () => {
 
   test("a saved list less than a day old isn't fetched again", async ({ page, maximo }) => {
     maximo.appListRequests = 0;
-    await maximo.reloadShell();
+    page = await maximo.reloadShell();
     await expect.poll(() => appListState(page), { timeout: 30_000 }).toBe(SAVED);
     await page.waitForTimeout(3_000);
     expect(maximo.appListRequests).toBe(0);
@@ -64,7 +65,7 @@ test.describe("app list from Maximo", () => {
     const old = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
     await ext.set("local", { [key]: { ...entry, fetchedAt: old } });
     maximo.appListRequests = 0;
-    await maximo.reloadShell();
+    page = await maximo.reloadShell();
     await expect.poll(async () => (await savedEntry(ext)).entry.fetchedAt, { timeout: 30_000 }).not.toBe(old);
     expect(maximo.appListRequests).toBeGreaterThanOrEqual(2); // modules + allowedappoptions
     await expect.poll(() => appListState(page)).toBe(SAVED);
@@ -109,7 +110,7 @@ test.describe("app list from Maximo", () => {
     // The open Maximo page drops back to the built-in apps straight away...
     await expect.poll(() => appListState(page)).toBe("builtin:4");
     // ...and the next page load fetches the list again.
-    await maximo.reloadShell();
+    page = await maximo.reloadShell();
     await expect.poll(() => appListState(page), { timeout: 30_000 }).toBe(SAVED);
     await savedEntry(ext);
   });
@@ -118,7 +119,7 @@ test.describe("app list from Maximo", () => {
     try {
       await ext.clearSavedLists();
       maximo.appListMode = "fail";
-      await maximo.reloadShell();
+      page = await maximo.reloadShell();
       await expect
         .poll(() => page.locator("html").getAttribute("data-magic-search-apps-error"), { timeout: 30_000 })
         .toContain("HTTP 500");
@@ -130,7 +131,7 @@ test.describe("app list from Maximo", () => {
       const target = await enterTarget(page);
       expect(target.searchParams.get("value")).toBe("wotrack");
     } finally {
-      await restore(maximo, ext, page);
+      await restore(maximo, ext);
     }
   });
 
@@ -138,7 +139,7 @@ test.describe("app list from Maximo", () => {
     try {
       maximo.appListMode = "real";
       await ext.clearSavedLists();
-      await maximo.reloadShell();
+      page = await maximo.reloadShell();
       await expect.poll(() => appListState(page), { timeout: 30_000 }).toMatch(/^saved:\d+$/);
       const count = Number((await appListState(page)).split(":")[1]);
       expect(count).toBeGreaterThan(FIXTURE_GROUPS);
@@ -149,7 +150,7 @@ test.describe("app list from Maximo", () => {
       await palette(page).input.pressSequentially("work order tracking");
       await expect(palette(page).options.first()).toContainText("Work Order Tracking");
     } finally {
-      await restore(maximo, ext, page);
+      await restore(maximo, ext);
     }
   });
 });

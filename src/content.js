@@ -77,6 +77,10 @@
   let previousFocus = null;
   // Set while the palette is open; re-renders it when the app list changes.
   let rerenderOpenPalette = null;
+  // Set while the palette is open: its input, and its key handler (so keys
+  // that land in a Maximo field instead can be passed on to it).
+  let paletteInput = null;
+  let paletteKey = null;
   Catalog.onUpdate(() => rerenderOpenPalette && rerenderOpenPalette());
 
   // Find the element that really has focus, looking inside same-origin
@@ -115,8 +119,15 @@
     list.className = "magic-search-list";
     list.setAttribute("role", "listbox");
 
-    // What Enter does: the first entry shown (an app, or the refresh command).
+    // Entries shown (apps, or the refresh command) and which one is
+    // highlighted: what Enter opens. Typing highlights the top entry again;
+    // Up/Down moves the highlight.
     let entries = [];
+    let selected = 0;
+    // Set by Up/Down: Space then fills in the highlighted app's name.
+    let navigated = false;
+    // After Space fills in a name, keep that app highlighted while it's listed.
+    let pinnedApp = null;
     let refreshing = false;
 
     function statusRow(text) {
@@ -139,14 +150,19 @@
         else entries.push(cmd);
         entries = entries.slice(0, Apps.SHOW_TOP);
       }
+      selected = 0;
+      if (pinnedApp) {
+        const at = entries.findIndex((en) => en.type === "app" && en.group.app.id === pinnedApp);
+        if (at >= 0) selected = at;
+        else pinnedApp = null;
+      }
+      navigated = false;
       list.classList.toggle("is-insert", insert);
       const rows = entries.map((entry, index) => {
         const li = document.createElement("li");
         li.className = "magic-search-option";
         li.setAttribute("role", "option");
-        const selected = index === 0;
-        li.classList.toggle("is-selected", selected);
-        li.setAttribute("aria-selected", String(selected));
+        li.dataset.index = String(index);
         const label = document.createElement("span");
         label.className = "magic-search-label";
         if (entry.type === "command") {
@@ -156,7 +172,7 @@
           li.dataset.app = entry.group.app.id;
           label.textContent = entry.group.label;
           if (entry.alias) label.dataset.alias = entry.alias;
-          if (filter && selected) li.dataset.filter = filter;
+          if (filter) li.dataset.filterText = filter;
         }
         li.appendChild(label);
         return li;
@@ -164,6 +180,41 @@
       if (status) rows.push(statusRow(status));
       list.replaceChildren(...rows);
       list.hidden = rows.length === 0;
+      highlight();
+    }
+
+    // Mark the highlighted row (and show the filter badge on it).
+    function highlight() {
+      for (const li of list.querySelectorAll(".magic-search-option")) {
+        const on = Number(li.dataset.index) === selected;
+        li.classList.toggle("is-selected", on);
+        li.setAttribute("aria-selected", String(on));
+        if (on && li.dataset.filterText) li.dataset.filter = li.dataset.filterText;
+        else delete li.dataset.filter;
+      }
+    }
+
+    function moveSelection(step) {
+      if (!entries.length) return;
+      selected = Math.min(entries.length - 1, Math.max(0, selected + step));
+      navigated = true;
+      pinnedApp = null;
+      highlight();
+    }
+
+    // Space after Up/Down: put the highlighted app's name in the box, ready
+    // for a filter, e.g. "pm" -> Down, Down -> Space gives "Master PM ".
+    // Keeps a leading new/insert/create.
+    function completeSelected() {
+      const entry = entries[selected];
+      if (!entry || entry.type !== "app") return false;
+      const { insert, filter } = interpret(input.value);
+      const verb = insert ? input.value.trim().split(/\s+/)[0] + " " : "";
+      input.value = `${verb}${entry.group.label} ${filter ? filter : ""}`;
+      input.setSelectionRange(input.value.length, input.value.length);
+      pinnedApp = entry.group.app.id;
+      render();
+      return true;
     }
     input.addEventListener("input", () => render());
     render();
@@ -188,15 +239,29 @@
       if (backdrop && input.isConnected) render(message);
     }
 
-    // Enter opens the top entry (or runs the refresh command); it does
-    // nothing when nothing matches.
-    input.addEventListener("keydown", (e) => {
+    // Up/Down move the highlight; Space after them fills in the app's name.
+    // Enter opens the highlighted entry (or runs the refresh command); it
+    // does nothing when nothing matches.
+    function onPaletteKey(e) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        moveSelection(e.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (e.key === " " && navigated && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (completeSelected()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
       if (e.key !== "Enter") return;
       e.preventDefault();
       e.stopPropagation();
       if (refreshing) return;
       const { insert, filter } = interpret(input.value);
-      const top = entries[0];
+      const top = entries[selected];
       if (!top) return;
       if (top.type === "command") {
         runRefresh();
@@ -209,7 +274,10 @@
       // jump within the page and load nothing, so reload instead.
       if (url === location.href) location.reload();
       else location.assign(url);
-    });
+    }
+    input.addEventListener("keydown", onPaletteKey);
+    paletteInput = input;
+    paletteKey = onPaletteKey;
 
     // Clicking the list or padding mustn't take focus away from the input.
     box.addEventListener("mousedown", (e) => {
@@ -251,6 +319,8 @@
     backdrop.remove();
     backdrop = null;
     rerenderOpenPalette = null;
+    paletteInput = null;
+    paletteKey = null;
 
     // Put the cursor back where the user was before opening the palette.
     if (previousFocus && previousFocus.isConnected) {
@@ -276,7 +346,45 @@
       e.preventDefault();
       e.stopPropagation();
       close();
+    } else if (backdrop && paletteInput && e.target !== paletteInput) {
+      redirectToPalette(e);
     }
+  }
+
+  // While the palette is open, Maximo can move focus to one of its own fields
+  // (e.g. when a page finishes loading) between key presses. Such a key is
+  // kept from Maximo and applied to the palette instead.
+  function redirectToPalette(e) {
+    if (MagicSearchShortcut.isModifierCode(e.code)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const input = paletteInput;
+    window.focus();
+    input.focus();
+    const typing = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (["Enter", "ArrowUp", "ArrowDown"].includes(e.key) || (e.key === " " && typing)) {
+      // The palette's own handler; preventDefault means it handled the key.
+      let handled = false;
+      paletteKey({
+        key: e.key,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        preventDefault: () => (handled = true),
+        stopPropagation() {},
+      });
+      if (handled || e.key !== " ") return;
+    }
+    if (typing) {
+      input.value += e.key;
+    } else if (e.key === "Backspace") {
+      input.value = input.value.slice(0, -1);
+    } else {
+      return;
+    }
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event("input"));
   }
 
   // Maximo's UI lives in a same-origin iframe (/maximo/ui/?type=embedded), and

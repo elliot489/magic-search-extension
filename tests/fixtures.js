@@ -48,6 +48,17 @@ async function logIn(page) {
   await expect(password).toBeHidden({ timeout: 30_000 });
 }
 
+// Resolve or reject like promise, but reject after ms if it hasn't settled
+// (unlike Playwright's own timeouts, this fires even if the browser hangs).
+function withTimeout(promise, ms, what) {
+  let timer;
+  const limit = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} took more than ${ms / 1000} s`)), ms);
+  });
+  promise.catch(() => {}); // a late rejection after the limit is ignored
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
 // The app list the tests use by default (see MaximoSession.routeAppList):
 // a reduced copy of Maximo's permission/modules and allowedappoptions answers,
 // with both standard and (Oil) versions, shared aliases ("pm", "sr", "im") and
@@ -117,10 +128,7 @@ class MaximoSession {
     const loginTab = this.page;
 
     // The tab every test shares.
-    this.page = await this.context.newPage();
-    // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
-    // "Leave site?": always leave. Other dialogs are dismissed as usual.
-    this.page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
+    this.page = await this.newSharedTab();
     await loginTab.close();
     await this.page.bringToFront();
     await this.page.goto(SHELL_URL);
@@ -172,10 +180,15 @@ class MaximoSession {
     this.appListMode = "fixture";
     this.appListModules = null;
     this.appListRequests = 0;
+    // A URL glob (not a function), so only these requests are intercepted:
+    // a function matcher makes Playwright intercept every request in the
+    // browser, and runs with that have hung mid-navigation.
     await this.context.route(
-      (url) => /\/oslc\/permission\/(modules|allowedappoptions)$/.test(url.pathname),
+      "**/oslc/permission/**",
       async (route) => {
         const req = route.request();
+        const path = new URL(req.url()).pathname;
+        if (!/\/oslc\/permission\/(modules|allowedappoptions)$/.test(path)) return route.continue();
         if (!req.headers()["x-magic-search"]) return route.continue();
         this.appListRequests++;
         if (this.appListMode === "real") return route.continue();
@@ -187,24 +200,67 @@ class MaximoSession {
     );
   }
 
+  // A new tab for the tests to share (same browser, same login).
+  async newSharedTab() {
+    const page = await this.context.newPage();
+    // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
+    // "Leave site?": always leave. Other dialogs are dismissed as usual.
+    page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
+    return page;
+  }
+
+  // Close the palette if it's open, so nothing of ours is in the way when
+  // the tab navigates.
+  async closePalette(page = this.page) {
+    const open = await page.locator(".magic-search-backdrop").count().catch(() => 0);
+    if (open) await page.keyboard.press("Escape").catch(() => {});
+  }
+
   // Load the Manage shell again in the shared tab (a new Maximo page load, so
-  // the extension reads or fetches its app list again).
+  // the extension reads or fetches its app list again). Returns the shared
+  // tab: if the current one doesn't navigate within 15 seconds (it has hung
+  // before), it's replaced by a fresh tab, so use the returned page.
   async reloadShell() {
-    const page = this.page;
+    let page = this.page;
     await page.bringToFront();
-    await page.goto("about:blank");
+    await this.closePalette(page);
+    try {
+      // Hard limit too: a hung browser can leave goto unsettled past its timeout.
+      await withTimeout(page.goto("about:blank", { timeout: 15_000, waitUntil: "commit" }), 16_000, "leaving the page");
+    } catch (e) {
+      console.warn(`[maximo] the Maximo tab didn't navigate (${e.message.split("\n")[0]}); using a fresh tab`);
+      page = await this.replaceSharedTab();
+    }
     await page.goto(SHELL_URL);
     await page.waitForLoadState("load");
     await this.checkSessionLimit();
     return page;
   }
 
+  // Swap a stuck shared tab for a new one in the same browser and login.
+  async replaceSharedTab() {
+    const old = this.page;
+    const page = await this.newSharedTab();
+    this.page = page;
+    // Not awaited: a hung tab may take long to close.
+    old.close({ runBeforeUnload: false }).catch(() => {});
+    await page.bringToFront();
+    return page;
+  }
+
   // Closes the browser but stays signed in: a later browser in this run may
   // reuse the login. global-teardown.js signs out at the end of the run.
   async stop() {
-    if (this.context) await this.saveSession().catch(() => {});
-    await this.context?.close().catch(() => {});
-    if (this.profileDir) fs.rmSync(this.profileDir, { recursive: true, force: true });
+    if (this.context) await withTimeout(this.saveSession(), 5_000, "saving the login").catch(() => {});
+    // Don't let a hung browser hold up the end of the run.
+    await withTimeout(this.context ? this.context.close() : Promise.resolve(), 10_000, "closing the browser").catch((e) =>
+      console.warn(`[maximo] ${e.message}; leaving it`)
+    );
+    try {
+      if (this.profileDir) fs.rmSync(this.profileDir, { recursive: true, force: true });
+    } catch (_) {
+      // Still in use by a browser that didn't close; it's in the temp folder.
+    }
   }
 
   // Maximo answers with this page when the login has too many UI sessions.
@@ -532,6 +588,41 @@ function appListState(page) {
   return page.locator("html").getAttribute("data-magic-search-apps");
 }
 
+// Wait until Maximo's own background requests in the page (maximo.jsp, used
+// by its UI after loading) have stopped for quietMs, so it doesn't move the
+// cursor or take key presses while a test types. Gives up after timeout.
+async function waitForMaximoIdle(page, { quietMs = 1_000, timeout = 15_000 } = {}) {
+  const isMaximo = (req) => req.url().includes("/maximo/ui/maximo.jsp");
+  let pending = 0;
+  let last = Date.now();
+  const started = (req) => {
+    if (isMaximo(req)) {
+      pending++;
+      last = Date.now();
+    }
+  };
+  const ended = (req) => {
+    if (isMaximo(req)) {
+      pending = Math.max(0, pending - 1);
+      last = Date.now();
+    }
+  };
+  page.on("request", started);
+  page.on("requestfinished", ended);
+  page.on("requestfailed", ended);
+  try {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if (pending === 0 && Date.now() - last >= quietMs) return;
+      await page.waitForTimeout(100);
+    }
+  } finally {
+    page.off("request", started);
+    page.off("requestfinished", ended);
+    page.off("requestfailed", ended);
+  }
+}
+
 // True when el has real keyboard focus (its frame is focused and it's the active element).
 function hasRealFocus(locator) {
   return locator.evaluate((el) => el.ownerDocument.hasFocus() && el.ownerDocument.activeElement === el);
@@ -550,6 +641,7 @@ module.exports = {
   enterTarget,
   expectFilteredBy,
   appListState,
+  waitForMaximoIdle,
   FIXTURE_MODULES,
   FIXTURE_OPTIONS,
   hasRealFocus,

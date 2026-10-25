@@ -16,6 +16,8 @@ Typing filters the list (case-insensitive). Apps match by name, by alias (short 
 
 When an alias made the match, it's shown after the name, e.g. "Item Master · im". The top app is highlighted, and **Enter** opens it in its list view. Enter does nothing if no apps match.
 
+Use **Up** and **Down** to highlight a different app. Enter opens the highlighted one. Pressing **Space** after the arrow keys fills in that app's name, e.g. `pm`, Down, Down, Space gives `Master PM `, ready for a filter. Typing anything else highlights the top match again.
+
 ### Your app list
 
 - **Loaded from Maximo** the first time you open it, using your own login: `/oslc/permission/modules` (the Go To menu) and `/oslc/permission/allowedappoptions` (what you may do in each app). Only standard Maximo apps (type `RUN`) are listed.

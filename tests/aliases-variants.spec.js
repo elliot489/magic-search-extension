@@ -72,7 +72,7 @@ test.describe("app versions and aliases", () => {
     try {
       maximo.appListModules = modulesWithout("PLUSGWO");
       await ext.clearSavedLists();
-      await maximo.reloadShell();
+      page = await maximo.reloadShell();
       await expect
         .poll(async () => {
           const lists = Object.values(await ext.savedLists());
@@ -91,7 +91,7 @@ test.describe("app versions and aliases", () => {
     } finally {
       maximo.appListModules = null;
       await ext.clearSavedLists();
-      await maximo.reloadShell();
+      page = await maximo.reloadShell();
       await expect
         .poll(async () => {
           const lists = Object.values(await ext.savedLists());
