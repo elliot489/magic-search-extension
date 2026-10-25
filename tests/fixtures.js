@@ -53,23 +53,10 @@ async function logIn(page) {
 // loading it (see enterTarget); only a few tests really load Maximo pages.
 const SESSION_LIMIT_TEXT = /maximum number of sessions/i;
 
-// The login's cookies are kept here (gitignored), so a restarted browser -
-// Playwright starts a new one after any failed test - and the next run reuse
-// the same Maximo login instead of signing in again.
-const COOKIE_FILE = path.join(ROOT, ".auth", "maximo-cookies.json");
-
-function loadCookies() {
-  try {
-    return JSON.parse(fs.readFileSync(COOKIE_FILE, "utf8"));
-  } catch (_) {
-    return [];
-  }
-}
-
-function saveCookies(cookies) {
-  fs.mkdirSync(path.dirname(COOKIE_FILE), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(COOKIE_FILE, JSON.stringify(cookies), { mode: 0o600 });
-}
+// Within a run the login is kept in .auth/ (see session-file.js), so the new
+// browser Playwright starts after a failed test reuses it. It's signed out and
+// deleted when the run ends (global-teardown.js).
+const sessionFile = require("./session-file");
 
 class MaximoSession {
   async start() {
@@ -83,12 +70,22 @@ class MaximoSession {
     // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
     // "Leave site?": always leave. Other dialogs are dismissed as usual.
     this.page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
-    const saved = loadCookies();
-    if (saved.length) await this.context.addCookies(saved).catch(() => {});
+    const saved = sessionFile.load();
+    if (saved?.cookies?.length) await this.context.addCookies(saved.cookies).catch(() => {});
     await logIn(this.page);
-    saveCookies(await this.context.cookies());
     await this.loadShell();
     await this.checkSessionLimit();
+    await this.saveSession();
+  }
+
+  // Keep the login and Maximo's sign-out URL for the rest of the run.
+  async saveSession() {
+    let logoutUrl = new URL("webclient/login/logout.jsp", BASE).toString();
+    for (const frame of this.page.frames()) {
+      const url = await frame.evaluate(() => window.LOGOUTURL).catch(() => null);
+      if (typeof url === "string" && url.includes("logout")) logoutUrl = url;
+    }
+    sessionFile.save({ cookies: await this.context.cookies(), logoutUrl });
   }
 
   // After signing in, Maximo redirects to the Manage shell by itself. Wait for
@@ -109,7 +106,10 @@ class MaximoSession {
     await page.waitForLoadState("load");
   }
 
+  // Closes the browser but stays signed in: a later browser in this run may
+  // reuse the login. global-teardown.js signs out at the end of the run.
   async stop() {
+    if (this.context) await this.saveSession().catch(() => {});
     await this.context?.close().catch(() => {});
   }
 

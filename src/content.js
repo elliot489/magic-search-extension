@@ -237,14 +237,14 @@
   // Maximo's UI lives in a same-origin iframe (/maximo/ui/?type=embedded), and
   // key presses there never reach the top window. So listen on every
   // same-origin frame's window too, including frames added or reloaded later.
-  const hookedWindows = new WeakSet();
   const hookedDocuments = new WeakSet();
   const hookedFrames = new WeakSet();
 
   function hookWindow(win) {
-    if (hookedWindows.has(win)) return;
-    hookedWindows.add(win);
     // Capture phase so Maximo's own key handlers don't swallow the shortcut.
+    // Added again on every frame load: when a frame goes from its first blank
+    // page to Maximo's page, Chrome may keep the window object but drop its
+    // listeners. Adding the same listener twice is a no-op.
     win.addEventListener("keydown", onKeyDown, true);
   }
 
