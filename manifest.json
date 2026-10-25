@@ -2,12 +2,17 @@
   "manifest_version": 3,
   "name": "Magic Search for Maximo",
   "version": "0.1.0",
-  "description": "Command palette style search for Maximo Manage. Press Ctrl+Space to open.",
+  "description": "Command palette style search for Maximo Manage. Press Cmd+K (Ctrl+K on Windows) to open; configurable.",
+  "permissions": ["storage"],
+  "options_ui": {
+    "page": "src/options.html",
+    "open_in_tab": true
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "include_globs": ["*maximo/oslc/graphite/manage-shell*"],
-      "js": ["src/content.js"],
+      "js": ["src/shortcut.js", "src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle"
     }

@@ -119,6 +119,8 @@
     });
 
     document.body.appendChild(backdrop);
+    // The shortcut may have come from inside an iframe: pull focus back up here.
+    window.focus();
     input.focus();
   }
 
@@ -129,25 +131,81 @@
 
     // Put the cursor back where the user was before opening the palette.
     if (previousFocus && previousFocus.isConnected) {
+      // If it's inside an iframe, focus that frame's window first.
+      const win = previousFocus.ownerDocument.defaultView;
+      if (win && win !== window) win.focus();
       previousFocus.focus({ preventScroll: true });
     }
     previousFocus = null;
   }
 
-  // Capture phase so Maximo's own key handlers don't swallow the shortcut.
-  window.addEventListener(
-    "keydown",
-    (e) => {
-      if (e.ctrlKey && (e.code === "Space" || e.key === " ")) {
-        e.preventDefault();
-        e.stopPropagation();
-        backdrop ? close() : open();
-      } else if (e.key === "Escape" && backdrop) {
-        e.preventDefault();
-        e.stopPropagation();
-        close();
+  // Current shortcut; read from settings and kept up to date when it changes.
+  let shortcut = { ...MagicSearchShortcut.DEFAULT };
+  MagicSearchShortcut.load().then((sc) => (shortcut = sc));
+  MagicSearchShortcut.onChange((sc) => (shortcut = sc));
+
+  function onKeyDown(e) {
+    if (MagicSearchShortcut.matches(e, shortcut)) {
+      e.preventDefault();
+      e.stopPropagation();
+      backdrop ? close() : open();
+    } else if (e.key === "Escape" && backdrop) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  }
+
+  // Maximo's UI lives in a same-origin iframe (/maximo/ui/?type=embedded), and
+  // key presses there never reach the top window. So listen on every
+  // same-origin frame's window too, including frames added or reloaded later.
+  const hookedWindows = new WeakSet();
+  const hookedDocuments = new WeakSet();
+  const hookedFrames = new WeakSet();
+
+  function hookWindow(win) {
+    if (hookedWindows.has(win)) return;
+    hookedWindows.add(win);
+    // Capture phase so Maximo's own key handlers don't swallow the shortcut.
+    win.addEventListener("keydown", onKeyDown, true);
+  }
+
+  function hookDocument(doc) {
+    if (!doc || hookedDocuments.has(doc)) return;
+    hookedDocuments.add(doc);
+    doc.querySelectorAll("iframe, frame").forEach(hookFrame);
+    new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.tagName === "IFRAME" || node.tagName === "FRAME") hookFrame(node);
+          else if (node.firstElementChild) node.querySelectorAll("iframe, frame").forEach(hookFrame);
+        }
       }
-    },
-    true
-  );
+    }).observe(doc, { childList: true, subtree: true });
+  }
+
+  function hookFrameContents(frame) {
+    try {
+      const win = frame.contentWindow;
+      const doc = frame.contentDocument; // null (or throws) when cross-origin
+      if (!win || !doc) return;
+      hookWindow(win);
+      hookDocument(doc);
+    } catch (_) {
+      // Cross-origin frame: can't listen there.
+    }
+  }
+
+  function hookFrame(frame) {
+    if (!hookedFrames.has(frame)) {
+      hookedFrames.add(frame);
+      // Each navigation inside the frame brings a new document (and usually a new window).
+      frame.addEventListener("load", () => hookFrameContents(frame));
+    }
+    hookFrameContents(frame);
+  }
+
+  hookWindow(window);
+  hookDocument(document);
 })();

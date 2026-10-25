@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Magic Search options</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 32px; max-width: 520px; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    .row { display: flex; align-items: center; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+    kbd { font: 600 15px ui-monospace, monospace; padding: 4px 10px; border: 1px solid #8884; border-radius: 6px; background: #8881; }
+    button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #8886; background: #8882; cursor: pointer; }
+    button.recording { outline: 2px solid #4a8cff; }
+    #status { min-height: 1.5em; color: #888; }
+    #status.error { color: #d33; }
+  </style>
+</head>
+<body>
+  <h1>Magic Search for Maximo</h1>
+  <div class="row">
+    <span>Shortcut to open the search box:</span>
+    <kbd id="current">…</kbd>
+  </div>
+  <div class="row">
+    <button id="record" type="button">Record new shortcut</button>
+    <button id="reset" type="button">Reset to default</button>
+  </div>
+  <p id="status" role="status"></p>
+  <script src="shortcut.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
