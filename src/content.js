@@ -5,19 +5,43 @@
   window.__magicSearchLoaded = true;
 
   // Hardcoded for now; this list will be filled in automatically later.
+  // Aliases are extra names that also match (as a prefix), e.g. "wo".
   const OPTIONS = [
-    { label: "Locations", app: "LOCATION" },
-    { label: "Assets", app: "ASSET" },
-    { label: "Work Orders", app: "WOTRACK" },
+    { label: "Locations", app: "LOCATION", aliases: [] },
+    { label: "Assets", app: "ASSET", aliases: [] },
+    { label: "Work Orders", app: "WOTRACK", aliases: ["wo"] },
+    { label: "Purchase Orders", app: "PO", aliases: ["po"] },
   ];
+
+  // Starting the query with one of these words (then a space) opens the app
+  // ready to insert a new record, e.g. "new wo" or "create work order".
+  const INSERT_VERBS = ["new", "insert", "create"];
+
+  // Split typed text into { insert, query }: "new wo" -> { insert: true, query: "wo" }.
+  function parseQuery(text) {
+    const trimmed = text.trim().toLowerCase();
+    const m = trimmed.match(/^(\S+)\s+(.*)$/);
+    if (m && INSERT_VERBS.includes(m[1])) return { insert: true, query: m[2] };
+    return { insert: false, query: trimmed };
+  }
+
+  function optionMatches(option, query) {
+    return (
+      option.label.toLowerCase().includes(query) ||
+      option.aliases.some((alias) => alias.startsWith(query))
+    );
+  }
 
   // URL that opens a Maximo application in the Manage shell, e.g.
   // .../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=wotrack#/main
   // (the same format Maximo's own side menu uses, minus its one-off _tt token).
-  function appUrl(app) {
+  // With insert, adds &additionalevent=insert so Maximo starts a new record.
+  function appUrl(app, insert = false) {
     const url = new URL(location.href);
     url.pathname = url.pathname.replace(/manage-shell\/.*$/, "manage-shell/index.html");
-    url.search = new URLSearchParams({ event: "loadapp", value: app.toLowerCase() }).toString();
+    const params = { event: "loadapp", value: app.toLowerCase() };
+    if (insert) params.additionalevent = "insert";
+    url.search = new URLSearchParams(params).toString();
     url.hash = "#/main";
     return url.toString();
   }
@@ -71,30 +95,35 @@
     });
 
     function matches() {
-      const query = input.value.trim().toLowerCase();
-      return items.filter(({ option }) =>
-        option.label.toLowerCase().includes(query)
-      );
+      const { query } = parseQuery(input.value);
+      return items.filter(({ option }) => optionMatches(option, query));
     }
 
-    // Live filter: hide options that don't contain the typed text.
-    input.addEventListener("input", () => {
-      const visible = new Set(matches());
+    // Live filter: hide options that don't match the typed text and highlight
+    // the top one (what Enter opens). With an insert verb, the list is marked
+    // so each option shows "New record".
+    function refresh() {
+      const remaining = matches();
+      const visible = new Set(remaining);
+      list.classList.toggle("is-insert", parseQuery(input.value).insert);
       for (const item of items) {
         item.li.hidden = !visible.has(item);
-        item.li.classList.toggle("is-only-match", visible.size === 1 && visible.has(item));
+        item.li.classList.toggle("is-selected", item === remaining[0]);
+        item.li.setAttribute("aria-selected", String(item === remaining[0]));
       }
-      list.hidden = visible.size === 0;
-    });
+      list.hidden = remaining.length === 0;
+    }
+    input.addEventListener("input", refresh);
+    refresh();
 
-    // Enter opens the app, but only when exactly one option is left.
+    // Enter opens the top remaining option; it does nothing when none match.
     input.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
       e.stopPropagation();
       const remaining = matches();
-      if (remaining.length !== 1) return;
-      const url = appUrl(remaining[0].option.app);
+      if (remaining.length === 0) return;
+      const url = appUrl(remaining[0].option.app, parseQuery(input.value).insert);
       previousFocus = null;
       close();
       location.assign(url);
