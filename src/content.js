@@ -81,6 +81,20 @@
   // that land in a Maximo field instead can be passed on to it).
   let paletteInput = null;
   let paletteKey = null;
+  // Set while the palette is open in an app (searching that app's actions):
+  // switches it to normal app search; returns false if it already was.
+  let paletteLeaveContext = null;
+
+  // The palette's tag for the current app, e.g. "Work Order Tracking": the
+  // label from the app list, else the app id.
+  function contextLabel(app) {
+    const id = app.toUpperCase();
+    for (const group of Catalog.groups()) {
+      const version = group.versions.find((v) => v.id === id);
+      if (version) return version.label;
+    }
+    return id;
+  }
   Catalog.onUpdate(() => rerenderOpenPalette && rerenderOpenPalette());
 
   // Find the element that really has focus, looking inside same-origin
@@ -112,8 +126,42 @@
     const input = document.createElement("input");
     input.type = "text";
     input.className = "magic-search-input";
-    input.placeholder = "Search Maximo...";
     input.setAttribute("aria-label", "Search Maximo");
+
+    // Opened inside an app: search that app's actions (toolbar, Common and
+    // More Actions), shown by a tag before the input. Backspace on an empty
+    // box, the tag's x or the shortcut again goes back to normal app search.
+    let context = MagicSearchActions.current();
+    const inputRow = document.createElement("div");
+    inputRow.className = "magic-search-input-row";
+    const tag = document.createElement("span");
+    tag.className = "magic-search-tag";
+    const tagLabel = document.createElement("span");
+    const tagClose = document.createElement("button");
+    tagClose.type = "button";
+    tagClose.className = "magic-search-tag-close";
+    tagClose.textContent = "×";
+    tagClose.setAttribute("aria-label", "Search all apps instead");
+    tag.append(tagLabel, tagClose);
+    function showMode() {
+      tag.hidden = !context;
+      if (context) {
+        tagLabel.textContent = contextLabel(context.app);
+        input.placeholder = "Search actions...";
+      } else {
+        input.placeholder = "Search Maximo...";
+      }
+    }
+    showMode();
+    function leaveContext() {
+      if (!context) return false;
+      context = null;
+      showMode();
+      render();
+      input.focus();
+      return true;
+    }
+    tagClose.addEventListener("click", leaveContext);
 
     const list = document.createElement("ul");
     list.className = "magic-search-list";
@@ -142,6 +190,7 @@
     // filter, the top option shows it. When an alias (not the name) matched,
     // it's shown after the label, e.g. "Item Master · im".
     function render(status) {
+      if (context) return renderActions();
       const { insert, filter, matches, command } = interpret(input.value);
       entries = matches.slice(0, Apps.SHOW_TOP).map((m) => ({ type: "app", ...m }));
       if (command) {
@@ -178,6 +227,32 @@
         return li;
       });
       if (status) rows.push(statusRow(status));
+      list.replaceChildren(...rows);
+      list.hidden = rows.length === 0;
+      highlight();
+    }
+
+    // In an app: its actions matching the text, top one highlighted.
+    function renderActions() {
+      entries = MagicSearchActions.rank(context.actions, input.value)
+        .slice(0, MagicSearchActions.SHOW_TOP)
+        .map((action) => ({ type: "action", action }));
+      selected = 0;
+      pinnedApp = null;
+      navigated = false;
+      list.classList.remove("is-insert");
+      const rows = entries.map((entry, index) => {
+        const li = document.createElement("li");
+        li.className = "magic-search-option magic-search-action";
+        li.setAttribute("role", "option");
+        li.dataset.index = String(index);
+        li.dataset.event = entry.action.event;
+        const label = document.createElement("span");
+        label.className = "magic-search-label";
+        label.textContent = entry.action.label;
+        li.appendChild(label);
+        return li;
+      });
       list.replaceChildren(...rows);
       list.hidden = rows.length === 0;
       highlight();
@@ -243,6 +318,12 @@
     // Enter opens the highlighted entry (or runs the refresh command); it
     // does nothing when nothing matches.
     function onPaletteKey(e) {
+      if (e.key === "Backspace" && context && input.value === "") {
+        e.preventDefault();
+        e.stopPropagation();
+        leaveContext();
+        return;
+      }
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
@@ -267,6 +348,12 @@
         runRefresh();
         return;
       }
+      if (top.type === "action") {
+        previousFocus = null;
+        close();
+        MagicSearchActions.run(top.action);
+        return;
+      }
       const url = appUrl(top.group.app.id, { insert, filter });
       previousFocus = null;
       close();
@@ -278,13 +365,15 @@
     input.addEventListener("keydown", onPaletteKey);
     paletteInput = input;
     paletteKey = onPaletteKey;
+    paletteLeaveContext = leaveContext;
 
     // Clicking the list or padding mustn't take focus away from the input.
     box.addEventListener("mousedown", (e) => {
       if (e.target !== input) e.preventDefault();
     });
 
-    box.appendChild(input);
+    inputRow.append(tag, input);
+    box.appendChild(inputRow);
     box.appendChild(list);
     backdrop.appendChild(box);
 
@@ -321,6 +410,7 @@
     rerenderOpenPalette = null;
     paletteInput = null;
     paletteKey = null;
+    paletteLeaveContext = null;
 
     // Put the cursor back where the user was before opening the palette.
     if (previousFocus && previousFocus.isConnected) {
@@ -341,7 +431,9 @@
     if (MagicSearchShortcut.matches(e, shortcut)) {
       e.preventDefault();
       e.stopPropagation();
-      backdrop ? close() : open();
+      // In an app, the shortcut first switches to searching all apps.
+      if (!backdrop) open();
+      else if (!(paletteLeaveContext && paletteLeaveContext())) close();
     } else if (e.key === "Escape" && backdrop) {
       e.preventDefault();
       e.stopPropagation();
@@ -362,7 +454,7 @@
     window.focus();
     input.focus();
     const typing = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
-    if (["Enter", "ArrowUp", "ArrowDown"].includes(e.key) || (e.key === " " && typing)) {
+    if (["Enter", "ArrowUp", "ArrowDown", "Backspace"].includes(e.key) || (e.key === " " && typing)) {
       // The palette's own handler; preventDefault means it handled the key.
       let handled = false;
       paletteKey({
@@ -374,7 +466,7 @@
         preventDefault: () => (handled = true),
         stopPropagation() {},
       });
-      if (handled || e.key !== " ") return;
+      if (handled || !(e.key === " " || e.key === "Backspace")) return;
     }
     if (typing) {
       input.value += e.key;

@@ -18,6 +18,10 @@ When an alias made the match, it's shown after the name, e.g. "Item Master · im
 
 Use **Up** and **Down** to highlight a different app. Enter opens the highlighted one. Pressing **Space** after the arrow keys fills in that app's name, e.g. `pm`, Down, Down, Space gives `Master PM `, ready for a filter. Typing anything else highlights the top match again.
 
+### Inside an app: its actions
+
+Open the search box while you're in an app (e.g. Work Order Tracking) and it shows a tag with the app's name and searches that app's actions instead: the toolbar (only buttons that are on), Common Actions and More Actions, including submenus (shown as "View › Work Order History"). For example, `new` finds **New Work Order**, and Enter runs it as if you'd clicked it. To search all apps instead, press **Backspace** in the empty box, click the tag's **×**, or press the shortcut again. Pressing the shortcut once more closes the box. Escape always closes it.
+
 ### Your app list
 
 - **Loaded from Maximo** the first time you open it, using your own login: `/oslc/permission/modules` (the Go To menu) and `/oslc/permission/allowedappoptions` (what you may do in each app). Only standard Maximo apps (type `RUN`) are listed.
