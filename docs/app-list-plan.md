@@ -56,6 +56,49 @@ Open question: should the list also refresh itself when it's older than N days (
 
 Open question: keep both manual triggers, or only one?
 
+## Duplicate apps (industry variants)
+
+Some apps come in more than one version, with the same name plus a suffix in brackets. On the test instance there are 20 such pairs among the `RUN` apps, all "(Oil)" versions, for example:
+
+| Standard | Variant |
+|---|---|
+| `WOTRACK` Work Order Tracking | `PLUSGWO` Work Order Tracking (Oil) |
+| `ASSET` Assets | `PLUSGASS` Assets (Oil) |
+| `LOCATION` Locations | `PLUSGLOC` Locations (Oil) |
+| `PO` Purchase Orders | `PLUSGPO` Purchase Orders (Oil) |
+
+Others: Crafts, Hazards, Incidents, Item Master, Job Plans, Organizations, People, Precautions, Preventive Maintenance, Purchase Requisitions, Qualifications, Quick Reporting, Routes, Service Requests, Solutions, Ticket Templates.
+
+The palette shows only one app per group, so searching "work order" gives one result, not two.
+
+- **Grouping.** Apps are grouped when their labels match after removing a trailing "(...)" suffix, ignoring case. Only `RUN` apps count (e.g. "Assets (Monitor)" is `MAS` and already left out). The group's name is the label without the suffix, e.g. "Work Order Tracking".
+- **One version available.** If the user can open only one app in a group, that one is used automatically and nothing needs configuring. For example, a user with only "Work Order Tracking (Oil)" gets the Oil app whenever they pick Work Order Tracking.
+- **Several versions available.** The palette uses one of them and hides the others. Which one is set on the options page (below). Until it's set, the variant is used over the standard app (Oil over standard), because a user given an industry version normally works in it.
+- **Hidden versions give no results.** A hidden app doesn't appear when searching by its label, its app id or an alias. Aliases are attached to the group, so "wo" opens whichever Work Order Tracking is chosen.
+- **The chosen app is used everywhere.** That includes plain Enter, the description filter ("wo pump") and "new" (if the chosen app can't insert, "new" isn't offered for that group).
+- **Label shown.** The chosen app's own label, e.g. "Work Order Tracking (Oil)", so it's clear which one opens.
+
+### Options page: choosing a version
+
+A section "Apps with more than one version" lists each group where the user can open more than one app, from the saved list for the Maximo server and user last used, with a choice of which to use:
+
+```
+Work Order Tracking   (•) Work Order Tracking (Oil)   ( ) Work Order Tracking
+Assets                (•) Assets (Oil)                ( ) Assets
+...
+```
+
+The choice is saved in `chrome.storage.sync` (small, and follows the user's Chrome profile):
+
+```
+key:   appVariants
+value: { "work order tracking": "PLUSGWO", "assets": "ASSET" }
+```
+
+- It's keyed by the group name, so it applies on any Maximo server. If the chosen app isn't available on a server or for a user, the default rule above applies.
+- A change takes effect in open Maximo tabs straight away, the same way the shortcut setting does.
+- Groups with only one available version aren't listed, because there's nothing to choose.
+
 ## Labels, aliases and search
 
 - Labels come from Maximo, e.g. "Work Order Tracking" instead of "Work Orders". The module name is also searchable.
@@ -75,6 +118,7 @@ These follow the project rules: live Maximo, one login and one tab per run, most
 - Fetch failure (route `permission/modules` to 500): the built-in four are still shown.
 - "new" is offered only for apps with `canInsert`.
 - Existing tests are updated for the new labels.
+- Variants: with both Work Order Tracking and its (Oil) version available, "work order" shows one result, the Oil app by default. Choosing the standard app on the options page makes "wo" open `WOTRACK`, and the Oil app no longer appears. With only one version available (simulated by routing `permission/modules` to a reduced list), that version is used and the options page lists no choice for it.
 
 ## Later: field metadata
 
