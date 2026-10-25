@@ -117,10 +117,7 @@ class MaximoSession {
     const loginTab = this.page;
 
     // The tab every test shares.
-    this.page = await this.context.newPage();
-    // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
-    // "Leave site?": always leave. Other dialogs are dismissed as usual.
-    this.page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
+    this.page = await this.newSharedTab();
     await loginTab.close();
     await this.page.bringToFront();
     await this.page.goto(SHELL_URL);
@@ -187,15 +184,50 @@ class MaximoSession {
     );
   }
 
+  // A new tab for the tests to share (same browser, same login).
+  async newSharedTab() {
+    const page = await this.context.newPage();
+    // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
+    // "Leave site?": always leave. Other dialogs are dismissed as usual.
+    page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
+    return page;
+  }
+
+  // Close the palette if it's open, so nothing of ours is in the way when
+  // the tab navigates.
+  async closePalette(page = this.page) {
+    const open = await page.locator(".magic-search-backdrop").count().catch(() => 0);
+    if (open) await page.keyboard.press("Escape").catch(() => {});
+  }
+
   // Load the Manage shell again in the shared tab (a new Maximo page load, so
-  // the extension reads or fetches its app list again).
+  // the extension reads or fetches its app list again). Returns the shared
+  // tab: if the current one doesn't navigate within 15 seconds (it has hung
+  // before), it's replaced by a fresh tab, so use the returned page.
   async reloadShell() {
-    const page = this.page;
+    let page = this.page;
     await page.bringToFront();
-    await page.goto("about:blank");
+    await this.closePalette(page);
+    try {
+      await page.goto("about:blank", { timeout: 15_000, waitUntil: "commit" });
+    } catch (e) {
+      console.warn(`[maximo] the Maximo tab didn't navigate (${e.message.split("\n")[0]}); using a fresh tab`);
+      page = await this.replaceSharedTab();
+    }
     await page.goto(SHELL_URL);
     await page.waitForLoadState("load");
     await this.checkSessionLimit();
+    return page;
+  }
+
+  // Swap a stuck shared tab for a new one in the same browser and login.
+  async replaceSharedTab() {
+    const old = this.page;
+    const page = await this.newSharedTab();
+    this.page = page;
+    // Not awaited: a hung tab may take long to close.
+    old.close({ runBeforeUnload: false }).catch(() => {});
+    await page.bringToFront();
     return page;
   }
 
@@ -532,6 +564,41 @@ function appListState(page) {
   return page.locator("html").getAttribute("data-magic-search-apps");
 }
 
+// Wait until Maximo's own background requests in the page (maximo.jsp, used
+// by its UI after loading) have stopped for quietMs, so it doesn't move the
+// cursor or take key presses while a test types. Gives up after timeout.
+async function waitForMaximoIdle(page, { quietMs = 1_000, timeout = 15_000 } = {}) {
+  const isMaximo = (req) => req.url().includes("/maximo/ui/maximo.jsp");
+  let pending = 0;
+  let last = Date.now();
+  const started = (req) => {
+    if (isMaximo(req)) {
+      pending++;
+      last = Date.now();
+    }
+  };
+  const ended = (req) => {
+    if (isMaximo(req)) {
+      pending = Math.max(0, pending - 1);
+      last = Date.now();
+    }
+  };
+  page.on("request", started);
+  page.on("requestfinished", ended);
+  page.on("requestfailed", ended);
+  try {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if (pending === 0 && Date.now() - last >= quietMs) return;
+      await page.waitForTimeout(100);
+    }
+  } finally {
+    page.off("request", started);
+    page.off("requestfinished", ended);
+    page.off("requestfailed", ended);
+  }
+}
+
 // True when el has real keyboard focus (its frame is focused and it's the active element).
 function hasRealFocus(locator) {
   return locator.evaluate((el) => el.ownerDocument.hasFocus() && el.ownerDocument.activeElement === el);
@@ -550,6 +617,7 @@ module.exports = {
   enterTarget,
   expectFilteredBy,
   appListState,
+  waitForMaximoIdle,
   FIXTURE_MODULES,
   FIXTURE_OPTIONS,
   hasRealFocus,

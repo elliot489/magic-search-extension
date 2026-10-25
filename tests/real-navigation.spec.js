@@ -6,6 +6,7 @@ const {
   iframeTextField,
   maximoFrame,
   expectFilteredBy,
+  waitForMaximoIdle,
 } = require("./fixtures");
 
 // The other tests only check where Enter would go. These few really load the
@@ -32,6 +33,8 @@ test.describe("Maximo really opens what Enter asks for", () => {
           .catch(() => "loading")
       )
       .toBe("complete");
+    // A record page keeps loading after that (maximo.jsp requests).
+    await waitForMaximoIdle(page);
     await openPalette(page);
     await palette(page).input.pressSequentially(query);
     await expect(palette(page).input).toHaveValue(query);
