@@ -172,7 +172,10 @@
       const url = appUrl(remaining[0].app, { insert, filter });
       previousFocus = null;
       close();
-      location.assign(url);
+      // Same address as now (the app is already open): assign() would only
+      // jump within the page and load nothing, so reload instead.
+      if (url === location.href) location.reload();
+      else location.assign(url);
     });
 
     // Clicking the list or padding mustn't take focus away from the input.

@@ -4,6 +4,7 @@ const {
   palette,
   openPalette,
   iframeTextField,
+  maximoFrame,
   expectFilteredBy,
 } = require("./fixtures");
 
@@ -47,6 +48,23 @@ test.describe("Maximo really opens what Enter asks for", () => {
   test('"new wo" + Enter opens Work Orders ready to insert', async ({ page }) => {
     const url = await enterAndLoad(page, "new wo", "wotrack");
     expect(url.searchParams.get("additionalevent")).toBe("insert");
-    await expect(iframeTextField(page)).toBeVisible({ timeout: 30_000 });
+    // A new record's form, not the list: Maximo puts the cursor in the key
+    // field, already filled with the new number (e.g. Work Order 1002), and
+    // there are no list filter fields.
+    const frame = maximoFrame(page);
+    await expect
+      .poll(
+        () =>
+          frame
+            .locator("body")
+            .evaluate((body) => {
+              const el = body.ownerDocument.activeElement;
+              return !!el && el.tagName === "INPUT" && !/_tfrow_/.test(el.id) && el.value.trim() !== "";
+            })
+            .catch(() => false),
+        { timeout: 30_000 }
+      )
+      .toBe(true);
+    await expect(iframeTextField(page)).toHaveCount(0);
   });
 });

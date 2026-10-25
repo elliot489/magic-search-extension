@@ -1,4 +1,4 @@
-const { test, expect, palette, openPalette, enterTarget, DEFAULT_KEYS } = require("./fixtures");
+const { test, expect, palette, openPalette, enterTarget, gotoApp, DEFAULT_KEYS } = require("./fixtures");
 
 test.describe("opening and closing", () => {
   test("Cmd/Ctrl+K opens the search box with the cursor in it", async ({ page }) => {
@@ -165,6 +165,16 @@ test.describe("opening apps", () => {
       expect(url.searchParams.get("additionalevent")).toBeNull();
     });
   }
+});
+
+test("choosing the app that's already open reloads it", async ({ page }) => {
+  // Same address as the current page: must still load, not just close the palette.
+  await gotoApp(page, "wotrack");
+  await openPalette(page);
+  await palette(page).input.pressSequentially("wo");
+  const target = await enterTarget(page);
+  expect(target.searchParams.get("value")).toBe("wotrack");
+  expect(target.searchParams.get("additionalevent")).toBeNull();
 });
 
 test.describe("inserting new records", () => {

@@ -224,10 +224,23 @@ function maximoFrame(page) {
 }
 
 // First editable, visible text field inside Maximo's iframe.
+// A list view's filter fields (ids contain "_tfrow_"), not e.g. the side menu's search.
 function iframeTextField(page) {
   return maximoFrame(page)
-    .locator('input[type="text"]:visible:not([readonly]):not([disabled])')
+    .locator('input[id*="_tfrow_"][type="text"]:visible:not([readonly]):not([disabled])')
     .first();
+}
+
+// Click a text field in Maximo's iframe until the cursor stays in it (Maximo
+// may still be loading and move the cursor to its own first field).
+async function focusField(page) {
+  const field = iframeTextField(page);
+  await expect(field).toBeVisible({ timeout: 30_000 });
+  await expect(async () => {
+    await field.click();
+    await expect.poll(() => hasRealFocus(field), { timeout: 2_000 }).toBe(true);
+  }).toPass({ timeout: 30_000 });
+  return field;
 }
 
 // Open an app in the Manage shell and wait for a text field in Maximo's iframe.
@@ -378,6 +391,7 @@ module.exports = {
   maximoFrame,
   iframeTextField,
   gotoApp,
+  focusField,
   enterTarget,
   expectFilteredBy,
   hasRealFocus,
