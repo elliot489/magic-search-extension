@@ -6,6 +6,8 @@ const {
   appUrl,
   iframeTextField,
   hasRealFocus,
+  DEFAULT_KEYS,
+  DEFAULT_LABEL,
 } = require("./fixtures");
 
 const CUSTOM = "Alt+Shift+KeyM";
@@ -23,9 +25,9 @@ test.describe("custom shortcut", () => {
     await options.reset();
   });
 
-  test("options page shows Ctrl+Space by default", async ({ options }) => {
+  test("options page shows Cmd/Ctrl+K by default", async ({ options }) => {
     await options.reset();
-    await expect(options.current).toHaveText("Ctrl+Space");
+    await expect(options.current).toHaveText(DEFAULT_LABEL);
   });
 
   test("recording a shortcut saves and shows it", async ({ options }) => {
@@ -40,7 +42,7 @@ test.describe("custom shortcut", () => {
     await options.page.locator("#record").click();
     await options.page.keyboard.press("KeyQ");
     await expect(options.status).toContainText("isn't allowed");
-    await expect(options.current).toHaveText("Ctrl+Space");
+    await expect(options.current).toHaveText(DEFAULT_LABEL);
   });
 
   test("the new shortcut opens the palette and the old one doesn't", async ({ options, page }) => {
@@ -54,7 +56,7 @@ test.describe("custom shortcut", () => {
     await page.keyboard.press(CUSTOM);
     await expect(palette(page).backdrop).toHaveCount(0);
 
-    await expectStaysClosed(page, "Control+Space");
+    await expectStaysClosed(page, DEFAULT_KEYS);
   });
 
   test("a change applies to an open Maximo page without reloading", async ({ options, page }) => {
@@ -68,7 +70,7 @@ test.describe("custom shortcut", () => {
 
     await openPalette(page, CUSTOM);
     await page.keyboard.press("Escape");
-    await expectStaysClosed(page, "Control+Space");
+    await expectStaysClosed(page, DEFAULT_KEYS);
   });
 
   test("the new shortcut works inside Maximo's iframe", async ({ options, page }) => {
@@ -85,10 +87,10 @@ test.describe("custom shortcut", () => {
     await openPalette(page, CUSTOM);
     await page.keyboard.press("Escape");
     await expect.poll(() => hasRealFocus(field)).toBe(true);
-    await expectStaysClosed(page, "Control+Space");
+    await expectStaysClosed(page, DEFAULT_KEYS);
   });
 
-  test("resetting brings Ctrl+Space back", async ({ options, page }) => {
+  test("resetting brings Cmd/Ctrl+K back", async ({ options, page }) => {
     await options.record(CUSTOM);
     await options.reset();
     await page.bringToFront();

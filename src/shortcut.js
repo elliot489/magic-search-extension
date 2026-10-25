@@ -3,8 +3,10 @@
 // { code, ctrlKey, altKey, shiftKey, metaKey }, where code is a KeyboardEvent.code.
 var MagicSearchShortcut = (() => {
   const STORAGE_KEY = "shortcut";
-  const DEFAULT = { code: "Space", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false };
   const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
+  // Cmd+K on Mac, Ctrl+K elsewhere. (Not Ctrl+Space: macOS takes that for
+  // switching input source whenever a text field has focus.)
+  const DEFAULT = { code: "KeyK", ctrlKey: !isMac, altKey: false, shiftKey: false, metaKey: isMac };
 
   function normalize(sc) {
     if (!sc || typeof sc.code !== "string" || !sc.code) return { ...DEFAULT };

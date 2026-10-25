@@ -1,7 +1,7 @@
-const { test, expect, palette, openPalette } = require("./fixtures");
+const { test, expect, palette, openPalette, DEFAULT_KEYS } = require("./fixtures");
 
 test.describe("opening and closing", () => {
-  test("Ctrl+Space opens the search box with the cursor in it", async ({ page }) => {
+  test("Cmd/Ctrl+K opens the search box with the cursor in it", async ({ page }) => {
     await openPalette(page);
     const { input, options } = palette(page);
     await expect(input).toBeFocused();
@@ -14,9 +14,19 @@ test.describe("opening and closing", () => {
     await expect(palette(page).backdrop).toHaveCount(0);
   });
 
-  test("Ctrl+Space again closes it", async ({ page }) => {
+  test("Cmd/Ctrl+K again closes it", async ({ page }) => {
     await openPalette(page);
+    await page.keyboard.press(DEFAULT_KEYS);
+    await expect(palette(page).backdrop).toHaveCount(0);
+  });
+
+  test("Ctrl+Space no longer opens it", async ({ page }) => {
+    // Make sure the content script is running first.
+    await openPalette(page);
+    await page.keyboard.press("Escape");
+    await expect(palette(page).backdrop).toHaveCount(0);
     await page.keyboard.press("Control+Space");
+    await page.waitForTimeout(1_000);
     await expect(palette(page).backdrop).toHaveCount(0);
   });
 

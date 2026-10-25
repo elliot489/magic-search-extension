@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Magic Search for Maximo",
   "version": "0.1.0",
-  "description": "Command palette style search for Maximo Manage. Press Ctrl+Space (configurable) to open.",
+  "description": "Command palette style search for Maximo Manage. Press Cmd+K (Ctrl+K on Windows) to open; configurable.",
   "permissions": ["storage"],
   "options_ui": {
     "page": "src/options.html",

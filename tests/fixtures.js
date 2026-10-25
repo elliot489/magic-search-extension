@@ -24,6 +24,10 @@ function appUrl(app) {
   return url.toString();
 }
 
+// Default shortcut: Cmd+K on Mac, Ctrl+K elsewhere ("ControlOrMeta" picks the right one).
+const DEFAULT_KEYS = "ControlOrMeta+KeyK";
+const DEFAULT_LABEL = process.platform === "darwin" ? "Cmd+K" : "Ctrl+K";
+
 // Headless by default; HEADED=1 shows the browser window.
 const HEADED = /^(1|true|yes)$/i.test(process.env.HEADED || "");
 
@@ -116,13 +120,13 @@ const optionsPage = (page) => ({
   async reset() {
     await page.bringToFront();
     await page.locator("#reset").click();
-    await expect(page.locator("#current")).toHaveText("Ctrl+Space");
+    await expect(page.locator("#current")).toHaveText(DEFAULT_LABEL);
   },
 });
 
 // The content script loads at document_idle, so the first key press can come
 // too early on a slow Maximo page. Press until the palette shows (bounded).
-async function openPalette(page, keys = "Control+Space") {
+async function openPalette(page, keys = DEFAULT_KEYS) {
   const { backdrop } = palette(page);
   await expect(async () => {
     if (!(await backdrop.isVisible())) await page.keyboard.press(keys);
@@ -157,4 +161,6 @@ module.exports = {
   iframeTextField,
   hasRealFocus,
   SHELL_URL,
+  DEFAULT_KEYS,
+  DEFAULT_LABEL,
 };

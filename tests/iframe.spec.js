@@ -7,6 +7,7 @@ const {
   maximoFrame,
   iframeTextField,
   hasRealFocus,
+  DEFAULT_KEYS,
 } = require("./fixtures");
 
 // Maximo's UI (and every text field in it) is inside a same-origin iframe.
@@ -25,7 +26,7 @@ test.describe("shortcut inside Maximo's iframe", () => {
     return field;
   }
 
-  test("Ctrl+Space in a text field opens the palette", async ({ page }) => {
+  test("Cmd/Ctrl+K in a text field opens the palette", async ({ page }) => {
     await focusField(page);
     await openPalette(page);
     await expect(palette(page).input).toBeFocused();
@@ -40,10 +41,10 @@ test.describe("shortcut inside Maximo's iframe", () => {
     await expect.poll(() => hasRealFocus(field)).toBe(true);
   });
 
-  test("Ctrl+Space again closes it", async ({ page }) => {
+  test("Cmd/Ctrl+K again closes it", async ({ page }) => {
     await focusField(page);
     await openPalette(page);
-    await page.keyboard.press("Control+Space");
+    await page.keyboard.press(DEFAULT_KEYS);
     await expect(palette(page).backdrop).toHaveCount(0);
   });
 

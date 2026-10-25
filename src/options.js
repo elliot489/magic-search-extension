@@ -65,9 +65,10 @@
     stopRecording();
     await S.reset();
     show(S.DEFAULT);
-    setStatus("Saved. Shortcut reset to Ctrl+Space.");
+    setStatus(`Saved. Shortcut reset to ${S.format(S.DEFAULT)}.`);
   });
 
+  resetBtn.textContent = `Reset to ${S.format(S.DEFAULT)}`;
   S.load().then(show);
   S.onChange(show);
 })();
