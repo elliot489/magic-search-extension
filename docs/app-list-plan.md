@@ -109,21 +109,22 @@ value: { "work order tracking": "PLUSGWO", "assets": "ASSET" }
 
 ### Generic aliases
 
-Each app gets these aliases automatically:
+Aliases belong to an app group (all versions of one app, see Duplicate apps), not to a single app id. Whatever an alias matches, it opens the version chosen in the options. So "wo" opens Work Order Tracking (Oil) if that is the chosen version, and Work Order Tracking if that is.
+
+Each group gets these aliases automatically:
 
 1. **Initials of its name**, taken after removing a bracketed suffix and small words (of, and, the, for, to, &). There is one alias for the first two words and one for the whole name. Names of a single word get none, because one letter is too short to be useful.
-2. **Its app id**, e.g. `PR`, `PO`, `PM`, `WOTRACK`.
+2. **The app id of each version**, e.g. `PR`, `PO`, `PM`, `WOTRACK`. In the Work Order Tracking group both `wotrack` and `plusgwo` are aliases, and both open the chosen version.
 
 | App | Aliases |
 |---|---|
-| Work Order Tracking (`WOTRACK`) | wo, wot, wotrack |
+| Work Order Tracking (`WOTRACK`, `PLUSGWO`) | wo, wot, wotrack, plusgwo |
 | Purchase Requisitions (`PR`) | pr |
 | Purchase Orders (`PO`) | po |
 | Preventive Maintenance (`PM`) | pm |
 | Job Plans (`JOBPLAN`) | jp, jobplan |
 | Item Master (`ITEM`) | im, item |
 | Service Requests (`SR`) | sr |
-| Work Order Tracking (Oil) (`PLUSGWO`) | wo, wot, plusgwo |
 
 - **Exact match first.** If the query equals an alias, that app tops the list. So "pr" gives Purchase Requisitions, not Precautions or Preventive Maintenance, even though those names also start with "pr".
 - **Shared aliases.** On the test instance, 33 of the 133 generated aliases belong to more than one app, for example "pm" for Preventive Maintenance and Prioritization Matrix (Oil); "sr" for Service Requests and Shipment Receiving; "im" for Item Master, Integration Modules and Isolation Management (Oil); "ct" for five apps. Nothing is hidden: all of them are listed, in this order:
@@ -135,13 +136,34 @@ Each app gets these aliases automatically:
   Remaining ties keep Maximo's menu order. "im" is one such tie, and a built-in extra can settle it (see below).
 - **The matched alias is shown** next to the label when an alias, not the name, matched, e.g. "Item Master · im". This makes it clear why an app is listed.
 - **Prefix matching still applies**, so "wo" also matches "wot", as it does today.
-- **Variants share aliases.** Initials come from the name without its suffix, so "wo" finds the chosen Work Order Tracking version (see Duplicate apps).
-- **Built-in extras are kept only where the rule falls short.** A small map keyed by app id adds aliases that aren't initials, e.g. `PR: ["purchase request"]`, since Maximo calls it Purchase Requisitions. It starts almost empty.
+- **Variants share aliases.** Initials come from the name without its suffix, so every version of an app gets the same ones, and they always lead to the chosen version.
+- **Built-in extras are kept only where the rule falls short.** A small map adds aliases that aren't initials, e.g. "purchase request" for Purchase Requisitions, since that's Maximo's name for it. They count as generated aliases and can be edited like the rest. The map starts almost empty.
 - **Filters and "new" work with aliases.** "wo pump" filters Work Order Tracking, and "new pr" inserts a requisition.
 
-Open questions:
-- Should users be able to add their own aliases on the options page (alias → app, synced, winning over generated ones)?
-- Should long app ids such as `PLUSGWO` count as aliases, or only ids that are short or readable (`PR`, `ITEM`, `JOBPLAN`)?
+### Options page: editing aliases
+
+Aliases are generated automatically and can be edited. An "Aliases" section lists every app group from the saved list for the Maximo server and user last used, with a search box, because there are about 200 groups:
+
+```
+Work Order Tracking      [wo, wot, wotrack, plusgwo]   Reset
+Purchase Requisitions    [pr, purchase request]        Reset
+Item Master              [im, item]                    Reset
+```
+
+- **Editing.** Each row is a comma-separated text field. You can add, change or remove any alias, generated ones included. Removing "im" from Integration Modules, for example, leaves "im" to Item Master.
+- **Reset** puts a group back to its generated aliases. Edited rows are marked so they're easy to find.
+- **Saved** in `chrome.storage.sync`, so edits follow the Chrome profile. Only edited groups are stored, keyed by group name, which makes them apply on any Maximo server:
+
+  ```
+  key:   appAliases
+  value: { "work order tracking": ["wo", "wot", "job"], "integration modules": ["intmod"] }
+  ```
+
+  A group with no entry uses its generated aliases. That way new generated aliases (e.g. after a refresh) still reach groups you haven't touched.
+- **Edited aliases rank first.** An alias you typed yourself counts as strongly as an app id match, so it beats generated initials when an alias is shared.
+- **The same alias on several groups** is allowed. All of them are listed, and the row shows a note such as "also used by Integration Modules".
+- **Changes apply at once** in open Maximo tabs, as the shortcut setting does.
+- **Choosing a version** (the section above) doesn't touch aliases. They belong to the group, so they follow whichever version is chosen.
 
 ## Tests
 
@@ -154,6 +176,7 @@ These follow the project rules: live Maximo, one login and one tab per run, most
 - Fetch failure (route `permission/modules` to 500): the built-in four are still shown.
 - "new" is offered only for apps with `canInsert`.
 - Existing tests are updated for the new labels.
+- Alias editing: an alias added on the options page opens its app, a removed one no longer matches, and Reset brings back the generated set. With the Oil version chosen, "wo" and "wotrack" both open `PLUSGWO`.
 - Aliases: "wo" opens Work Order Tracking, "pr" ranks Purchase Requisitions first, "pm" lists Preventive Maintenance above Prioritization Matrix (Oil), "po" gives Purchase Orders, and "new pr" inserts a requisition.
 - Variants: with both Work Order Tracking and its (Oil) version available, "work order" shows one result, the Oil app by default. Choosing the standard app on the options page makes "wo" open `WOTRACK`, and the Oil app no longer appears. With only one version available (simulated by routing `permission/modules` to a reduced list), that version is used and the options page lists no choice for it.
 
