@@ -4,24 +4,31 @@ A Chrome extension that adds a command palette style search box to Maximo Manage
 
 It only runs on pages whose URL contains `maximo/oslc/graphite/manage-shell`. Press **Cmd+K** on Mac (**Ctrl+K** on Windows/Linux) to open the search box, even while the cursor is in a Maximo text field (Maximo's UI sits in an iframe; the extension listens there too). Press **Escape** or click the dimmed background to close it.
 
-Under the search box is a list of apps (hardcoded for now):
+Under the search box is a list of **your** Maximo apps: the ones in your Go To menu, loaded from Maximo (see below). Until that list has loaded, or if it can't be loaded, the box shows four built-in apps: Locations, Assets, Work Order Tracking and Purchase Orders. It shows the top 10 matches.
 
-| App | Maximo app | Aliases |
-| --- | --- | --- |
-| Locations | `location` | |
-| Assets | `asset` | |
-| Work Orders | `wotrack` | `wo` |
-| Purchase Orders | `po` | `po` |
+Typing filters the list (case-insensitive). Apps match by name, by alias (short names such as `wo`, see below) or by module name. The matches are sorted, best first (apps that match equally keep Maximo's menu order):
 
-Typing filters the list (case-insensitive): an app stays if its name contains the text, or one of its aliases starts with it. So `work` and `wo` both leave Work Orders, and `pu` and `po` both leave Purchase Orders.
+1. An alias equal to the text: an app id (`pm`, `wotrack`) or an alias you edited first, then the initials of the whole name, then of its first two words.
+2. The name starts with the text.
+3. An alias starts with it.
+4. A later word of the name starts with it: `orders` finds Purchase **Orders** and Work **Order** Tracking.
+5. The text appears anywhere in the name, then in the module name.
 
-The matches are sorted, best first (apps that match equally keep the order above):
+When an alias made the match, it's shown after the name, e.g. "Item Master · im". The top app is highlighted, and **Enter** opens it in its list view. Enter does nothing if no apps match.
 
-1. The name or an alias starts with the text: `a` puts **Assets** first.
-2. A later word in the name starts with it: `o` puts Work **O**rders and Purchase **O**rders next.
-3. The text appears anywhere else in the name: `a` also leaves Loc**a**tions and Purch**a**se Orders, below Assets.
+### Your app list
 
-The top app is highlighted, and **Enter** opens it in its list view, so there's no need to narrow it down to one (`a` + Enter opens Assets). Enter does nothing if no apps match.
+- **Loaded from Maximo** the first time you open it, using your own login: `/oslc/permission/modules` (the Go To menu) and `/oslc/permission/allowedappoptions` (what you may do in each app). Only standard Maximo apps (type `RUN`) are listed.
+- **Saved** in the extension's local storage, one list per Maximo server and user.
+- **Fetched again** when it's more than a day old, when you type **refresh** in the search box (the "Refresh app list" command) or after you click **Clear** for it on the options page.
+
+### One entry per app
+
+Some apps come in more than one version, such as Work Order Tracking and Work Order Tracking (Oil): the same name with a suffix in brackets. The search box lists only one of them. If you can open only one version, that one is used. If you can open several, the (Oil)-style version is used unless you choose another on the options page, under **Apps with more than one version**.
+
+### Aliases
+
+Each app gets aliases automatically: its app ids (all versions), the initials of its name (`wot` for Work Order Tracking) and of its first two words (`wo`). An alias opens whichever version of the app is chosen. Edit them on the options page under **Aliases** (comma-separated); **Reset** puts the generated ones back. Edited aliases rank above generated ones when several apps share an alias.
 
 ### Open an app with its list filtered
 
@@ -31,9 +38,9 @@ This uses `&additionalevent=useqbe&additionaleventvalue=description=<text>` (set
 
 ### Insert a new record
 
-Start with **new**, **insert** or **create** and a space, then the app: `new wo`, `create work order`, `insert work`, `new po`. Each option then shows a **New record** label, and Enter opens the top app ready to insert a new record. Any text after the app name is ignored here.
+Start with **new**, **insert** or **create** and a space, then the app: `new wo`, `create work order`, `insert work`, `new po`. Only apps you're allowed to insert into are offered. Each option then shows a **New record** label, and Enter opens the top app ready to insert a new record. Any text after the app name is ignored here.
 
-Apps open with the Manage shell URL `.../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=<app>#/main`, for example `value=location`, `value=asset`, `value=wotrack` or `value=po`. To insert a new record, `&additionalevent=insert` is added after the app name.
+Apps open with the Manage shell URL `.../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=<app>#/main`, for example `value=wotrack` or `value=plusgwo`. To insert a new record, `&additionalevent=insert` is added after the app name.
 
 ## Load it in Chrome
 
@@ -55,7 +62,9 @@ The setting is saved with Chrome sync and applies straight away to open Maximo t
 
 ## Tests
 
-The tests drive Chromium, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering (including aliases), opening apps, opening apps with their list filtered on description, opening apps ready to insert a new record (nothing gets saved), the shortcut inside Maximo's iframe, and changing the shortcut on the options page (they put the default back afterwards).
+The tests drive Chromium, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering (including aliases), opening apps, opening apps with their list filtered on description, opening apps ready to insert a new record (nothing gets saved), the shortcut inside Maximo's iframe, changing the shortcut on the options page (they put the default back afterwards), loading and refreshing the app list, choosing app versions and editing aliases.
+
+Most tests don't depend on what the test user can see: the extension's own requests for the app list are answered with a small list in `tests/data/` (taken from a real Maximo menu), with both standard and (Oil) versions. One test (`tests/app-list.spec.js`) loads the real list from your Maximo.
 
 One-time setup (Node 20.12 or newer):
 

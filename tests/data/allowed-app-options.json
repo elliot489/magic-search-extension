@@ -1,0 +1,126 @@
+{
+ "ASSET": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGASS": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "LOCATION": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGLOC": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSCTMPLT": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "MONITOR_SETUP_ASSETS": {
+  "READ": 1
+ },
+ "WOTRACK": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGWO": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "QUICKREP": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGQRP": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "SR": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PO": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGPO": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PR": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGPR": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PRECAUTN": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGPREC": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "JOBPLAN": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGJP": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGRFW": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGISO": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PM": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGPM": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "MASTERPM": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "ITEM": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGITEM": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "SHIPREC": {
+  "READ": 1
+ },
+ "IM": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "SOLUTION": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "PLUSGSR": {
+  "READ": 1,
+  "INSERT": 1
+ },
+ "CITYPE": {
+  "READ": 1
+ },
+ "WORKVIEW": {
+  "READ": 1
+ }
+}

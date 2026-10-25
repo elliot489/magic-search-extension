@@ -1,6 +1,6 @@
 # Plan: fill the app list from the user's Maximo access
 
-Status: planned, not built. Today the palette has four hardcoded apps (Locations, Assets, Work Orders, Purchase Orders) in `OPTIONS` in `src/content.js`.
+Status: built. Logic in `src/apps.js`, loading and saving in `src/catalog.js`, the palette in `src/content.js`, options in `src/options-apps.js`. The four built-in apps (Locations, Assets, Work Order Tracking, Purchase Orders) are the fallback.
 
 ## Goal
 
@@ -47,14 +47,14 @@ If field lists are added later (see below), they go in the same storage per app,
 3. Until the fetch finishes, the palette shows the four built-in apps, so it never opens empty.
 4. If the fetch fails, it keeps the built-in apps, logs a console warning and tries again on the next page load.
 
-Open question: should the list also refresh itself when it's older than N days (e.g. 7)?
+Decided: the list is also fetched again when it's more than 24 hours old.
 
 ## Manual refresh
 
 1. **Palette command.** Typing `refresh` shows a "Refresh app list" entry. Enter re-fetches on the current Maximo page and replaces the saved list, then shows "Loaded N apps".
 2. **Options page.** A section lists each saved list (server, user, number of apps, last refreshed) with a Clear button. Clearing makes the next Maximo page load fetch it again. The options page doesn't fetch from Maximo itself, because that would need extra host permissions to use the login.
 
-Open question: keep both manual triggers, or only one?
+Decided: keep both.
 
 ## Duplicate apps (industry variants)
 

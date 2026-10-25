@@ -22,7 +22,7 @@ test.describe("shortcut inside Maximo's iframe", () => {
     await focusField(page);
     await openPalette(page);
     await expect(palette(page).input).toBeFocused();
-    await expect(palette(page).options).toHaveText(["Locations", "Assets", "Work Orders", "Purchase Orders"]);
+    await expect(palette(page).options).toHaveCount(10);
   });
 
   test("Escape closes it and puts the cursor back in the field", async ({ page }) => {
