@@ -2,6 +2,8 @@ const { defineConfig } = require("@playwright/test");
 
 module.exports = defineConfig({
   testDir: "tests",
+  // One-off scripts with their own config (npm run discover-actions).
+  testIgnore: "discover/**",
   // Fresh login each run; sign out of Maximo when the run ends.
   globalSetup: "./tests/global-setup.js",
   globalTeardown: "./tests/global-teardown.js",
