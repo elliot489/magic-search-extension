@@ -3,7 +3,8 @@
   "private": true,
   "description": "Command palette style search for Maximo Manage (Chrome extension).",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "discover-apps": "playwright test -c playwright.discover.config.js"
   },
   "engines": {
     "node": ">=20.12"
