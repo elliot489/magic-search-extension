@@ -5,9 +5,27 @@
   window.__magicSearchLoaded = true;
 
   let backdrop = null;
+  let previousFocus = null;
+
+  // Find the element that really has focus, looking inside same-origin
+  // iframes (Maximo's UI lives in one).
+  function deepActiveElement() {
+    let el = document.activeElement;
+    try {
+      while (el && el.tagName === "IFRAME" && el.contentDocument) {
+        const inner = el.contentDocument.activeElement;
+        if (!inner || inner === el.contentDocument.body) break;
+        el = inner;
+      }
+    } catch (_) {
+      // Cross-origin frame: fall back to the iframe itself.
+    }
+    return el;
+  }
 
   function open() {
     if (backdrop) return;
+    previousFocus = deepActiveElement();
 
     backdrop = document.createElement("div");
     backdrop.className = "magic-search-backdrop";
@@ -26,7 +44,11 @@
 
     // Clicking the dimmed area (not the box itself) closes the palette.
     backdrop.addEventListener("mousedown", (e) => {
-      if (e.target === backdrop) close();
+      if (e.target === backdrop) {
+        // Stop the browser moving focus to <body> after we restore it.
+        e.preventDefault();
+        close();
+      }
     });
 
     document.body.appendChild(backdrop);
@@ -37,6 +59,12 @@
     if (!backdrop) return;
     backdrop.remove();
     backdrop = null;
+
+    // Put the cursor back where the user was before opening the palette.
+    if (previousFocus && previousFocus.isConnected) {
+      previousFocus.focus({ preventScroll: true });
+    }
+    previousFocus = null;
   }
 
   // Capture phase so Maximo's own key handlers don't swallow the shortcut.
