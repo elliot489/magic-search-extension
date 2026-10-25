@@ -59,3 +59,15 @@
 .magic-search-option.is-only-match {
   background: #333333;
 }
+
+/* "new"/"insert"/"create" typed: Enter creates a new record. */
+.magic-search-list.is-insert .magic-search-option::after {
+  content: "New record";
+  float: right;
+  font-size: 12px;
+  line-height: 21px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: #0f62fe;
+  color: #ffffff;
+}

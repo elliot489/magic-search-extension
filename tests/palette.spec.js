@@ -5,7 +5,7 @@ test.describe("opening and closing", () => {
     await openPalette(page);
     const { input, options } = palette(page);
     await expect(input).toBeFocused();
-    await expect(options).toHaveText(["Locations", "Assets", "Work Orders"]);
+    await expect(options).toHaveText(["Locations", "Assets", "Work Orders", "Purchase Orders"]);
   });
 
   test("Escape closes it", async ({ page }) => {
@@ -48,7 +48,18 @@ test.describe("filtering", () => {
     ["Loc", ["Locations"]],
     ["ass", ["Assets"]],
     ["WORK", ["Work Orders"]],
-    ["o", ["Locations", "Work Orders"]],
+    ["o", ["Locations", "Work Orders", "Purchase Orders"]],
+    // Aliases match too.
+    ["wo", ["Work Orders"]],
+    ["WO", ["Work Orders"]],
+    ["po", ["Purchase Orders"]],
+    ["PU", ["Purchase Orders"]],
+    // A leading new/insert/create filters on the rest of the text.
+    ["new wo", ["Work Orders"]],
+    ["create work order", ["Work Orders"]],
+    ["insert work", ["Work Orders"]],
+    ["new po", ["Purchase Orders"]],
+    ["create loc", ["Locations"]],
   ];
 
   for (const [query, expected] of cases) {
@@ -81,6 +92,9 @@ test.describe("opening apps", () => {
     ["Loc", "location"],
     ["Ass", "asset"],
     ["Work", "wotrack"],
+    ["wo", "wotrack"],
+    ["PO", "po"],
+    ["pu", "po"],
   ];
 
   for (const [query, app] of apps) {
@@ -95,7 +109,55 @@ test.describe("opening apps", () => {
       const url = new URL(page.url());
       expect(url.pathname).toMatch(/manage-shell\/index\.html$/);
       expect(url.searchParams.get("event")).toBe("loadapp");
+      // Plain matches open the list view, not a new record.
+      expect(url.searchParams.get("additionalevent")).toBeNull();
       await page.waitForLoadState("load");
     });
   }
+});
+
+test.describe("inserting new records", () => {
+  const cases = [
+    ["new wo", "wotrack"],
+    ["create work order", "wotrack"],
+    ["insert work", "wotrack"],
+    ["NEW PO", "po"],
+    ["create pu", "po"],
+    ["insert loc", "location"],
+  ];
+
+  for (const [query, app] of cases) {
+    test(`"${query}" + Enter opens ${app} ready to insert`, async ({ page }) => {
+      await openPalette(page);
+      await palette(page).input.pressSequentially(query);
+      await expect(palette(page).options).toHaveCount(1);
+      await expect(palette(page).list).toHaveClass(/is-insert/);
+      await Promise.all([
+        page.waitForURL((url) => url.searchParams.get("value") === app),
+        palette(page).input.press("Enter"),
+      ]);
+      const url = new URL(page.url());
+      expect(url.pathname).toMatch(/manage-shell\/index\.html$/);
+      expect(url.searchParams.get("event")).toBe("loadapp");
+      expect(url.searchParams.get("value")).toBe(app);
+      expect(url.searchParams.get("additionalevent")).toBe("insert");
+      await page.waitForLoadState("load");
+    });
+  }
+
+  test("the list isn't marked for insert without a verb", async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("work");
+    await expect(palette(page).options).toHaveCount(1);
+    await expect(palette(page).list).not.toHaveClass(/is-insert/);
+  });
+
+  test('"new" on its own matches nothing', async ({ page }) => {
+    await openPalette(page);
+    const before = page.url();
+    await palette(page).input.pressSequentially("new");
+    await expect(palette(page).options).toHaveCount(0);
+    await palette(page).input.press("Enter");
+    expect(page.url()).toBe(before);
+  });
 });
