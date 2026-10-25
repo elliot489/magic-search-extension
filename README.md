@@ -73,7 +73,7 @@ Run them with:
 npm test
 ```
 
-The whole run uses one Maximo login and one tab. Maximo limits how many sessions a login can have, and every page load can start one, so most tests check the address Enter would open without loading it. A few tests (`tests/real-navigation.spec.js`, run last) really open Maximo pages to prove the app, the new record and the description filter work. If Maximo still reports "maximum number of sessions", wait for old sessions to time out and run again.
+The whole run uses one Maximo login and one tab. Maximo limits how many sessions a login can have, and every page load can start one, so most tests check the address Enter would open without loading it. A few tests (`tests/real-navigation.spec.js`, run last) really open Maximo pages to prove the app, the new record and the description filter work. If Maximo still reports "maximum number of sessions", wait for old sessions to time out and run again. The login's cookies are kept in `.auth/maximo-cookies.json` (gitignored), so later runs, and the fresh browser Playwright starts after a failed test, reuse the same login until Maximo expires it. Delete that file to force a new login.
 
 They run headless by default (Chromium's new headless mode, which supports extensions). To watch the browser window instead:
 

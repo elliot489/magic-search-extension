@@ -53,6 +53,24 @@ async function logIn(page) {
 // loading it (see enterTarget); only a few tests really load Maximo pages.
 const SESSION_LIMIT_TEXT = /maximum number of sessions/i;
 
+// The login's cookies are kept here (gitignored), so a restarted browser -
+// Playwright starts a new one after any failed test - and the next run reuse
+// the same Maximo login instead of signing in again.
+const COOKIE_FILE = path.join(ROOT, ".auth", "maximo-cookies.json");
+
+function loadCookies() {
+  try {
+    return JSON.parse(fs.readFileSync(COOKIE_FILE, "utf8"));
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveCookies(cookies) {
+  fs.mkdirSync(path.dirname(COOKIE_FILE), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(COOKIE_FILE, JSON.stringify(cookies), { mode: 0o600 });
+}
+
 class MaximoSession {
   async start() {
     this.context = await chromium.launchPersistentContext("", {
@@ -65,10 +83,30 @@ class MaximoSession {
     // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
     // "Leave site?": always leave. Other dialogs are dismissed as usual.
     this.page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
+    const saved = loadCookies();
+    if (saved.length) await this.context.addCookies(saved).catch(() => {});
     await logIn(this.page);
-    await this.page.goto(SHELL_URL);
-    await this.page.waitForLoadState("load");
+    saveCookies(await this.context.cookies());
+    await this.loadShell();
     await this.checkSessionLimit();
+  }
+
+  // After signing in, Maximo redirects to the Manage shell by itself. Wait for
+  // that instead of navigating on top of it (which cancels the load).
+  async loadShell() {
+    const page = this.page;
+    const onShell = () => page.url().includes("/manage-shell/");
+    await page.waitForURL(/\/manage-shell\//, { timeout: 30_000 }).catch(() => {});
+    for (let attempt = 1; !onShell(); attempt++) {
+      try {
+        await page.goto(SHELL_URL);
+      } catch (e) {
+        // A redirect still in flight cancels our load: wait and check again.
+        if (attempt >= 3 || !/ERR_ABORTED|interrupted by another navigation/.test(e.message)) throw e;
+        await page.waitForLoadState("load").catch(() => {});
+      }
+    }
+    await page.waitForLoadState("load");
   }
 
   async stop() {
