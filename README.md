@@ -13,7 +13,15 @@ Under the search box is a list of apps (hardcoded for now):
 | Work Orders | `wotrack` | `wo` |
 | Purchase Orders | `po` | `po` |
 
-Typing filters the list (case-insensitive): an app stays if its name contains the text, or one of its aliases starts with it. So `work` and `wo` both leave Work Orders, and `pu` and `po` both leave Purchase Orders. The top app in the list is highlighted, and **Enter** opens it in its list view, so there's no need to narrow it down to one (`o` + Enter opens Locations). Enter does nothing if no apps match.
+Typing filters the list (case-insensitive): an app stays if its name contains the text, or one of its aliases starts with it. So `work` and `wo` both leave Work Orders, and `pu` and `po` both leave Purchase Orders.
+
+The matches are sorted, best first (apps that match equally keep the order above):
+
+1. The name or an alias starts with the text: `a` puts **Assets** first.
+2. A later word in the name starts with it: `o` puts Work **O**rders and Purchase **O**rders next.
+3. The text appears anywhere else in the name: `a` also leaves Loc**a**tions and Purch**a**se Orders, below Assets.
+
+The top app is highlighted, and **Enter** opens it in its list view, so there's no need to narrow it down to one (`a` + Enter opens Assets). Enter does nothing if no apps match.
 
 ### Insert a new record
 

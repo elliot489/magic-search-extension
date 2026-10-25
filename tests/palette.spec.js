@@ -48,7 +48,11 @@ test.describe("filtering", () => {
     ["Loc", ["Locations"]],
     ["ass", ["Assets"]],
     ["WORK", ["Work Orders"]],
-    ["o", ["Locations", "Work Orders", "Purchase Orders"]],
+    // Ranked: name starts with it, then a later word does, then anywhere.
+    ["o", ["Work Orders", "Purchase Orders", "Locations"]],
+    ["a", ["Assets", "Locations", "Purchase Orders"]],
+    ["A", ["Assets", "Locations", "Purchase Orders"]],
+    ["new a", ["Assets", "Locations", "Purchase Orders"]],
     // Aliases match too.
     ["wo", ["Work Orders"]],
     ["WO", ["Work Orders"]],
@@ -86,12 +90,27 @@ test.describe("filtering", () => {
     await expect(selected).toHaveText(["Work Orders"]);
   });
 
-  test("Enter opens the top match when several apps match", async ({ page }) => {
+  test('"a" puts Assets on top and highlights it', async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("a");
+    await expect(palette(page).options).toHaveText(["Assets", "Locations", "Purchase Orders"]);
+    await expect(page.locator(".magic-search-option.is-selected")).toHaveText(["Assets"]);
+  });
+
+  test("clearing the text puts the list back in its usual order", async ({ page }) => {
     await openPalette(page);
     await palette(page).input.pressSequentially("o");
+    await expect(palette(page).options).toHaveText(["Work Orders", "Purchase Orders", "Locations"]);
+    await palette(page).input.fill("");
+    await expect(palette(page).options).toHaveText(["Locations", "Assets", "Work Orders", "Purchase Orders"]);
+  });
+
+  test('"a" + Enter opens Assets', async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("a");
     await expect(palette(page).options).toHaveCount(3);
     await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === "location"),
+      page.waitForURL((url) => url.searchParams.get("value") === "asset"),
       palette(page).input.press("Enter"),
     ]);
     expect(new URL(page.url()).searchParams.get("additionalevent")).toBeNull();
@@ -107,6 +126,17 @@ test.describe("filtering", () => {
       palette(page).input.press("Enter"),
     ]);
     expect(new URL(page.url()).searchParams.get("additionalevent")).toBe("insert");
+    await page.waitForLoadState("load");
+  });
+
+  test('"o" + Enter opens Work Orders (word match beats Locations)', async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("o");
+    await Promise.all([
+      page.waitForURL((url) => url.searchParams.get("value") === "wotrack"),
+      palette(page).input.press("Enter"),
+    ]);
+    expect(new URL(page.url()).searchParams.get("additionalevent")).toBeNull();
     await page.waitForLoadState("load");
   });
 

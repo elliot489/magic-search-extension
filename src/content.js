@@ -25,12 +25,18 @@
     return { insert: false, query: trimmed };
   }
 
-  function optionMatches(option, query) {
-    return (
-      option.label.toLowerCase().includes(query) ||
-      option.aliases.some((alias) => alias.startsWith(query))
-    );
+  // How well an option matches, best first; -1 means no match.
+  // 0: name or alias starts with the text ("a" -> Assets)
+  // 1: a later word in the name starts with it ("o" -> Work Orders)
+  // 2: the text appears anywhere else in the name
+  function matchRank(option, query) {
+    const label = option.label.toLowerCase();
+    if (label.startsWith(query) || option.aliases.some((alias) => alias.startsWith(query))) return 0;
+    if (label.split(/\s+/).some((word) => word.startsWith(query))) return 1;
+    if (label.includes(query)) return 2;
+    return -1;
   }
+
 
   // URL that opens a Maximo application in the Manage shell, e.g.
   // .../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=wotrack#/main
@@ -96,7 +102,12 @@
 
     function matches() {
       const { query } = parseQuery(input.value);
-      return items.filter(({ option }) => optionMatches(option, query));
+      // Best matches first; ties keep the list order (sort is stable).
+      return items
+        .map((item) => ({ item, rank: matchRank(item.option, query) }))
+        .filter(({ rank }) => rank >= 0)
+        .sort((a, b) => a.rank - b.rank)
+        .map(({ item }) => item);
     }
 
     // Live filter: hide options that don't match the typed text and highlight
@@ -106,6 +117,10 @@
       const remaining = matches();
       const visible = new Set(remaining);
       list.classList.toggle("is-insert", parseQuery(input.value).insert);
+      // Show matches in ranked order, then the hidden rest.
+      for (const item of [...remaining, ...items.filter((it) => !visible.has(it))]) {
+        list.appendChild(item.li);
+      }
       for (const item of items) {
         item.li.hidden = !visible.has(item);
         item.li.classList.toggle("is-selected", item === remaining[0]);
