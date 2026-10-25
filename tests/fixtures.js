@@ -66,6 +66,22 @@ class MaximoSession {
       viewport: { width: 1400, height: 900 },
       args: [`--disable-extensions-except=${ROOT}`, `--load-extension=${ROOT}`],
     });
+    // Diagnostics: in every frame, before the page's own scripts, note the
+    // last key press Chrome delivered (printed by frameReport on failures).
+    await this.context.addInitScript(() => {
+      window.addEventListener(
+        "keydown",
+        (e) => {
+          try {
+            document.documentElement?.setAttribute(
+              "data-test-last-keydown",
+              JSON.stringify({ key: e.key, code: e.code, ctrl: e.ctrlKey, meta: e.metaKey, t: Math.round(e.timeStamp) })
+            );
+          } catch (_) {}
+        },
+        true
+      );
+    });
     this.page = this.context.pages()[0] || (await this.context.newPage());
     // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
     // "Leave site?": always leave. Other dialogs are dismissed as usual.
@@ -229,6 +245,12 @@ async function frameReport(page) {
     page.frames().map(async (f) => {
       const info = await f
         .evaluate(() => ({
+          // Chrome delivered this key press to the frame (test logger):
+          delivered: document.documentElement?.getAttribute("data-test-last-keydown") || "none",
+          // Our listeners: frame script present, last key they saw, toggles:
+          frameScript: document.documentElement?.getAttribute("data-magic-search-frame") || "no",
+          ourLastKey: document.documentElement?.getAttribute("data-magic-search-last-key") || "none",
+          toggle: document.documentElement?.getAttribute("data-magic-search-toggle") || "-",
           listening: document.documentElement?.getAttribute("data-magic-search") || "no",
           focus: document.hasFocus(),
           active: document.activeElement

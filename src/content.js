@@ -233,11 +233,32 @@
   MagicSearchShortcut.load().then((sc) => (shortcut = sc));
   MagicSearchShortcut.onChange((sc) => (shortcut = sc));
 
+  // Open or close the palette, recording the outcome for the tests.
+  function toggle(source) {
+    try {
+      backdrop ? close() : open();
+      MagicSearchMarks.set(document, "data-magic-search-toggle", `${source}: ${backdrop ? "open" : "closed"}`);
+    } catch (err) {
+      MagicSearchMarks.set(document, "data-magic-search-toggle", `${source}: error ${err && err.message}`);
+      throw err;
+    }
+  }
+
+  // Shortcut seen by src/frame.js inside a Maximo frame.
+  window.addEventListener("message", (e) => {
+    if (e.origin === location.origin && e.data && e.data.magicSearch === "toggle") toggle("frame");
+  });
+
   function onKeyDown(e) {
-    if (MagicSearchShortcut.matches(e, shortcut)) {
+    const doc = (e.target && e.target.ownerDocument) || document;
+    const matched = MagicSearchShortcut.matches(e, shortcut);
+    if (doc !== document) MagicSearchMarks.lastKey(doc, "top-fallback", e, matched);
+    if (matched) {
       e.preventDefault();
       e.stopPropagation();
-      backdrop ? close() : open();
+      // In a frame, src/frame.js normally handles it; don't toggle twice.
+      if (doc !== document && !MagicSearchMarks.claim(doc, e)) return;
+      toggle(doc === document ? "top" : "top-fallback");
     } else if (e.key === "Escape" && backdrop) {
       e.preventDefault();
       e.stopPropagation();
