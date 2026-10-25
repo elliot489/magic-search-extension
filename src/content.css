@@ -36,3 +36,26 @@
 .magic-search-input::placeholder {
   color: #a8a8a8;
 }
+
+.magic-search-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.magic-search-list[hidden],
+.magic-search-option[hidden] {
+  display: none;
+}
+
+.magic-search-option {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #ffffff;
+}
+
+/* The only remaining option: Enter will open it. */
+.magic-search-option.is-only-match {
+  background: #333333;
+}

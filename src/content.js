@@ -4,6 +4,24 @@
   if (window.__magicSearchLoaded) return;
   window.__magicSearchLoaded = true;
 
+  // Hardcoded for now; this list will be filled in automatically later.
+  const OPTIONS = [
+    { label: "Locations", app: "LOCATION" },
+    { label: "Assets", app: "ASSET" },
+    { label: "Work Orders", app: "WOTRACK" },
+  ];
+
+  // URL that opens a Maximo application in the Manage shell, e.g.
+  // .../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=wotrack#/main
+  // (the same format Maximo's own side menu uses, minus its one-off _tt token).
+  function appUrl(app) {
+    const url = new URL(location.href);
+    url.pathname = url.pathname.replace(/manage-shell\/.*$/, "manage-shell/index.html");
+    url.search = new URLSearchParams({ event: "loadapp", value: app.toLowerCase() }).toString();
+    url.hash = "#/main";
+    return url.toString();
+  }
+
   let backdrop = null;
   let previousFocus = null;
 
@@ -39,7 +57,56 @@
     input.placeholder = "Search Maximo...";
     input.setAttribute("aria-label", "Search Maximo");
 
+    const list = document.createElement("ul");
+    list.className = "magic-search-list";
+    list.setAttribute("role", "listbox");
+
+    const items = OPTIONS.map((option) => {
+      const li = document.createElement("li");
+      li.className = "magic-search-option";
+      li.setAttribute("role", "option");
+      li.textContent = option.label;
+      list.appendChild(li);
+      return { option, li };
+    });
+
+    function matches() {
+      const query = input.value.trim().toLowerCase();
+      return items.filter(({ option }) =>
+        option.label.toLowerCase().includes(query)
+      );
+    }
+
+    // Live filter: hide options that don't contain the typed text.
+    input.addEventListener("input", () => {
+      const visible = new Set(matches());
+      for (const item of items) {
+        item.li.hidden = !visible.has(item);
+        item.li.classList.toggle("is-only-match", visible.size === 1 && visible.has(item));
+      }
+      list.hidden = visible.size === 0;
+    });
+
+    // Enter opens the app, but only when exactly one option is left.
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const remaining = matches();
+      if (remaining.length !== 1) return;
+      const url = appUrl(remaining[0].option.app);
+      previousFocus = null;
+      close();
+      location.assign(url);
+    });
+
+    // Clicking the list or padding mustn't take focus away from the input.
+    box.addEventListener("mousedown", (e) => {
+      if (e.target !== input) e.preventDefault();
+    });
+
     box.appendChild(input);
+    box.appendChild(list);
     backdrop.appendChild(box);
 
     // Clicking the dimmed area (not the box itself) closes the palette.

@@ -4,7 +4,9 @@ A Chrome extension that adds a command palette style search box to Maximo Manage
 
 It only runs on pages whose URL contains `maximo/oslc/graphite/manage-shell`. Press **Ctrl+Space** to open the search box. Press **Escape** or click the dimmed background to close it.
 
-The search box doesn't do anything yet.
+Under the search box is a list of apps: **Locations**, **Assets** and **Work Orders** (hardcoded for now). Typing filters the list (case-insensitive). When only one app is left, press **Enter** to open it. Enter does nothing if zero or several apps match.
+
+Apps open with the Manage shell URL `.../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=<app>#/main`, for example `value=location`, `value=asset` or `value=wotrack`.
 
 ## Load it in Chrome
 
