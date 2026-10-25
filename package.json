@@ -1,0 +1,14 @@
+{
+  "name": "magic-search-extension",
+  "private": true,
+  "description": "Command palette style search for Maximo Manage (Chrome extension).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

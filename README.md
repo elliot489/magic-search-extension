@@ -19,3 +19,25 @@ Apps open with the Manage shell URL `.../maximo/oslc/graphite/manage-shell/index
 After changing any files, click the reload icon on the extension's card in `chrome://extensions`, then reload the Maximo tab.
 
 > On macOS, Ctrl+Space may be taken by the input source switcher. If nothing happens, turn that shortcut off in System Settings > Keyboard > Keyboard Shortcuts > Input Sources.
+
+## Tests
+
+The tests drive a visible Chromium window, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering and opening apps.
+
+One-time setup (Node 20.12 or newer):
+
+```sh
+npm install
+npx playwright install chromium
+cp .env.example .env   # then fill in MAXIMO_URL, MAXIMO_USER and MAXIMO_PASSWORD
+```
+
+`.env` is gitignored, so the login never gets committed.
+
+Run them with:
+
+```sh
+npm test
+```
+
+After a failed run, `npx playwright show-report` shows a screenshot and trace for each failure.
