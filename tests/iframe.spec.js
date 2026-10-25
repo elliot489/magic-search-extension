@@ -4,6 +4,7 @@ const {
   palette,
   openPalette,
   appUrl,
+  maximoFrame,
   iframeTextField,
   hasRealFocus,
 } = require("./fixtures");
@@ -55,20 +56,25 @@ test.describe("shortcut inside Maximo's iframe", () => {
   });
 
   test("still works after the iframe reloads", async ({ page }) => {
-    const frameEl = page.locator('iframe[src*="/ui/"], iframe[src*="type=embedded"]').first();
     await focusField(page);
     await openPalette(page);
     await page.keyboard.press("Escape");
 
     // Reload only the iframe; the shell (and its content script) stays put.
-    const handle = await frameEl.elementHandle();
-    const frame = await handle.contentFrame();
+    // Maximo shows the Start Center after this, so there may be no text field:
+    // click on the page inside the frame instead.
+    const frame = await (await maximoFrame(page).owner().elementHandle()).contentFrame();
+    await frame.evaluate(() => (window.__beforeReload = true));
     await Promise.all([
       frame.waitForNavigation({ waitUntil: "load" }),
       frame.evaluate(() => location.reload()),
     ]);
+    expect(await frame.evaluate(() => window.__beforeReload)).toBeUndefined();
 
-    await focusField(page);
+    const body = maximoFrame(page).locator("body");
+    await body.click({ position: { x: 400, y: 400 } });
+    await expect.poll(() => body.evaluate((b) => b.ownerDocument.hasFocus())).toBe(true);
+
     await openPalette(page);
     await expect(palette(page).input).toBeFocused();
   });
