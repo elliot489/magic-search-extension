@@ -47,29 +47,77 @@ async function logIn(page) {
   await expect(password).toBeHidden({ timeout: 30_000 });
 }
 
+// Maximo limits how many UI sessions one login may have open, and every
+// load of a Maximo page starts one that isn't ended when a test closes its tab.
+// So after MAX_PAGE_LOADS loads, the next test starts a fresh browser and
+// signs in again (a new login gets a new allowance).
+const MAX_PAGE_LOADS = 25;
+
+class MaximoSession {
+  constructor() {
+    this.context = null;
+    this.pageLoads = 0;
+    this.testId = null;
+  }
+
+  async start() {
+    this.context = await chromium.launchPersistentContext("", {
+      channel: "chromium",
+      headless: !HEADED,
+      viewport: { width: 1400, height: 900 },
+      args: [`--disable-extensions-except=${ROOT}`, `--load-extension=${ROOT}`],
+    });
+    // Count loads of Maximo's UI (the shell's iframe), top-level or in a frame.
+    this.context.on("request", (req) => {
+      if (req.isNavigationRequest() && /\/maximo\/ui\//.test(req.url())) this.pageLoads++;
+    });
+    await logIn(this.context.pages()[0] || (await this.context.newPage()));
+    this.pageLoads = 0;
+  }
+
+  async stop() {
+    if (!this.context) return;
+    // Best effort: end the login on the server so its sessions are freed now.
+    await this.context.request.get(new URL("oslc/logout", BASE).toString(), { timeout: 5_000 }).catch(() => {});
+    await this.context.close().catch(() => {});
+    this.context = null;
+  }
+
+  // The browser context for the current test. Decided once per test, so every
+  // fixture in one test gets the same context.
+  async forTest() {
+    const id = test.info().testId;
+    if (id !== this.testId) {
+      this.testId = id;
+      if (this.pageLoads >= MAX_PAGE_LOADS) {
+        await this.stop();
+        await this.start();
+      }
+    }
+    return this.context;
+  }
+}
+
 const test = base.extend({
-  // One Chromium browser with the unpacked extension loaded, signed in once
-  // and shared by every test in the run. Headless uses Chromium's new headless
-  // mode (channel "chromium"), which supports extensions.
+  // One Chromium browser with the unpacked extension loaded, signed in and
+  // shared by the tests (renewed now and then, see MaximoSession). Headless
+  // uses Chromium's new headless mode (channel "chromium"), which supports
+  // extensions.
   maximo: [
     async ({}, use) => {
-      const context = await chromium.launchPersistentContext("", {
-        channel: "chromium",
-        headless: !HEADED,
-        viewport: { width: 1400, height: 900 },
-        args: [`--disable-extensions-except=${ROOT}`, `--load-extension=${ROOT}`],
-      });
-      await logIn(context.pages()[0] || (await context.newPage()));
-      await use(context);
-      await context.close();
+      const session = new MaximoSession();
+      await session.start();
+      await use(session);
+      await session.stop();
     },
     { scope: "worker" },
   ],
 
-  // The unpacked extension's ID, read from chrome://extensions.
+  // The unpacked extension's ID, read from chrome://extensions. It comes from
+  // the folder path, so it stays the same when the browser is renewed.
   extensionId: [
     async ({ maximo }, use) => {
-      const page = await maximo.newPage();
+      const page = await maximo.context.newPage();
       await page.goto("chrome://extensions");
       const item = page.locator("extensions-item").first();
       await expect(item).toBeAttached();
@@ -82,7 +130,8 @@ const test = base.extend({
 
   // The extension's options page, open in its own tab.
   options: async ({ maximo, extensionId }, use) => {
-    const page = await maximo.newPage();
+    const context = await maximo.forTest();
+    const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/src/options.html`);
     await expect(page.locator("#current")).not.toHaveText("…");
     await use(optionsPage(page));
@@ -91,7 +140,8 @@ const test = base.extend({
 
   // Each test gets a fresh Manage shell page.
   page: async ({ maximo }, use) => {
-    const page = await maximo.newPage();
+    const context = await maximo.forTest();
+    const page = await context.newPage();
     await page.goto(SHELL_URL);
     await page.waitForLoadState("load");
     await use(page);
