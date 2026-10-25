@@ -102,10 +102,46 @@ value: { "work order tracking": "PLUSGWO", "assets": "ASSET" }
 ## Labels, aliases and search
 
 - Labels come from Maximo, e.g. "Work Order Tracking" instead of "Work Orders". The module name is also searchable.
-- Aliases stay as a small built-in map keyed by app id: `WOTRACK: ["wo", "work orders"]`, `PO: ["po"]`. They're merged into the fetched list.
-- With about 200 apps, the existing ranking does the heavy lifting: a label or alias starting with the query comes first, then a word in it starting with the query, then any other match. The list should show only the top N matches (e.g. 10) with the highlighted top entry.
+- Aliases are worked out from each app by a generic rule (below), so no app needs a hand-written alias.
+- With about 200 apps, the ranking does the heavy lifting. An exact alias match comes first. Next comes a label or alias starting with the query, then a word in the label starting with it, then any other match. The list should show only the top N matches (e.g. 10), with the top entry highlighted.
 - "new / insert / create" only offers apps with `canInsert`.
 - The description filter ("assets first") keeps working for any app. Some apps may not have a description field (see below).
+
+### Generic aliases
+
+Each app gets these aliases automatically:
+
+1. **Initials of its name**, taken after removing a bracketed suffix and small words (of, and, the, for, to, &). There is one alias for the first two words and one for the whole name. Names of a single word get none, because one letter is too short to be useful.
+2. **Its app id**, e.g. `PR`, `PO`, `PM`, `WOTRACK`.
+
+| App | Aliases |
+|---|---|
+| Work Order Tracking (`WOTRACK`) | wo, wot, wotrack |
+| Purchase Requisitions (`PR`) | pr |
+| Purchase Orders (`PO`) | po |
+| Preventive Maintenance (`PM`) | pm |
+| Job Plans (`JOBPLAN`) | jp, jobplan |
+| Item Master (`ITEM`) | im, item |
+| Service Requests (`SR`) | sr |
+| Work Order Tracking (Oil) (`PLUSGWO`) | wo, wot, plusgwo |
+
+- **Exact match first.** If the query equals an alias, that app tops the list. So "pr" gives Purchase Requisitions, not Precautions or Preventive Maintenance, even though those names also start with "pr".
+- **Shared aliases.** On the test instance, 33 of the 133 generated aliases belong to more than one app, for example "pm" for Preventive Maintenance and Prioritization Matrix (Oil); "sr" for Service Requests and Shipment Receiving; "im" for Item Master, Integration Modules and Isolation Management (Oil); "ct" for five apps. Nothing is hidden: all of them are listed, in this order:
+  1. the app whose id equals the query ("pm" gives `PM` Preventive Maintenance, "sr" gives `SR` Service Requests);
+  2. apps whose full-name initials equal the query;
+  3. apps whose first-two-word initials equal the query;
+  4. then the usual label ranking.
+
+  Remaining ties keep Maximo's menu order. "im" is one such tie, and a built-in extra can settle it (see below).
+- **The matched alias is shown** next to the label when an alias, not the name, matched, e.g. "Item Master · im". This makes it clear why an app is listed.
+- **Prefix matching still applies**, so "wo" also matches "wot", as it does today.
+- **Variants share aliases.** Initials come from the name without its suffix, so "wo" finds the chosen Work Order Tracking version (see Duplicate apps).
+- **Built-in extras are kept only where the rule falls short.** A small map keyed by app id adds aliases that aren't initials, e.g. `PR: ["purchase request"]`, since Maximo calls it Purchase Requisitions. It starts almost empty.
+- **Filters and "new" work with aliases.** "wo pump" filters Work Order Tracking, and "new pr" inserts a requisition.
+
+Open questions:
+- Should users be able to add their own aliases on the options page (alias → app, synced, winning over generated ones)?
+- Should long app ids such as `PLUSGWO` count as aliases, or only ids that are short or readable (`PR`, `ITEM`, `JOBPLAN`)?
 
 ## Tests
 
@@ -118,6 +154,7 @@ These follow the project rules: live Maximo, one login and one tab per run, most
 - Fetch failure (route `permission/modules` to 500): the built-in four are still shown.
 - "new" is offered only for apps with `canInsert`.
 - Existing tests are updated for the new labels.
+- Aliases: "wo" opens Work Order Tracking, "pr" ranks Purchase Requisitions first, "pm" lists Preventive Maintenance above Prioritization Matrix (Oil), "po" gives Purchase Orders, and "new pr" inserts a requisition.
 - Variants: with both Work Order Tracking and its (Oil) version available, "work order" shows one result, the Oil app by default. Choosing the standard app on the options page makes "wo" open `WOTRACK`, and the Oil app no longer appears. With only one version available (simulated by routing `permission/modules` to a reduced list), that version is used and the options page lists no choice for it.
 
 ## Later: field metadata
