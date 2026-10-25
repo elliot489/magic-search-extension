@@ -23,9 +23,15 @@ The matches are sorted, best first (apps that match equally keep the order above
 
 The top app is highlighted, and **Enter** opens it in its list view, so there's no need to narrow it down to one (`a` + Enter opens Assets). Enter does nothing if no apps match.
 
+### Open an app with its list filtered
+
+Type the app (name or alias), a space, then some text: `assets first`, `wo pump`, `work orders pump`, `po 1001`. The app is picked from the longest start of what you typed that matches, and the rest is the filter. The highlighted app shows a **Description: …** label, and Enter opens it with the list filtered on description. Maximo does the matching with the text as typed. If only one record matches, Maximo opens that record directly.
+
+This uses `&additionalevent=useqbe&additionaleventvalue=description=<text>` (set in `FILTER` at the top of `src/content.js`).
+
 ### Insert a new record
 
-Start with **new**, **insert** or **create** and a space, then the app: `new wo`, `create work order`, `insert work`, `new po`. Each option then shows a **New record** label, and Enter opens the top app ready to insert a new record.
+Start with **new**, **insert** or **create** and a space, then the app: `new wo`, `create work order`, `insert work`, `new po`. Each option then shows a **New record** label, and Enter opens the top app ready to insert a new record. Any text after the app name is ignored here.
 
 Apps open with the Manage shell URL `.../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=<app>#/main`, for example `value=location`, `value=asset`, `value=wotrack` or `value=po`. To insert a new record, `&additionalevent=insert` is added after the app name.
 
@@ -49,7 +55,7 @@ The setting is saved with Chrome sync and applies straight away to open Maximo t
 
 ## Tests
 
-The tests drive Chromium, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering (including aliases), opening apps, opening apps ready to insert a new record (nothing gets saved), the shortcut inside Maximo's iframe, and changing the shortcut on the options page (they put the default back afterwards).
+The tests drive Chromium, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering (including aliases), opening apps, opening apps with their list filtered on description, opening apps ready to insert a new record (nothing gets saved), the shortcut inside Maximo's iframe, and changing the shortcut on the options page (they put the default back afterwards).
 
 One-time setup (Node 20.12 or newer):
 

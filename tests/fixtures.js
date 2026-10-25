@@ -164,6 +164,84 @@ async function gotoApp(page, app) {
   }
 }
 
+// Look inside Maximo's iframe for the result of a description filter.
+// Returns { mode: "list", column, rows, bad } when a list filter field holds
+// the text (rows = description cells checked, bad = ones not containing it),
+// { mode: "record", field } when a record page's field contains it, or null.
+function readFilterResult(page, text) {
+  return maximoFrame(page)
+    .locator("body")
+    .evaluate((body, text) => {
+      const needle = text.toLowerCase();
+      const doc = body.ownerDocument;
+      const valueOf = (el) => (el.value !== undefined ? el.value : el.textContent || "");
+      const inputs = [...doc.querySelectorAll("input, textarea")];
+
+      // List view: the filter-row field (id contains "_tfrow_[C:n]") holds the text.
+      const filterInput = inputs.find(
+        (el) => /_tfrow_\[C:\d+\]/.test(el.id) && valueOf(el).trim().toLowerCase() === needle
+      );
+      if (filterInput) {
+        const [, prefix, col] = filterInput.id.match(/^(.*?)_tfrow_\[C:(\d+)\]/);
+        // Data cells are "<prefix>_tdrow_[C:n]-c[R:r]".
+        const cells = [...doc.querySelectorAll(`[id^="${prefix}_tdrow_[C:${col}]-c[R:"]`)];
+        const texts = cells.map((c) => {
+          const inner = c.querySelector("input, textarea");
+          return (inner ? valueOf(inner) : c.textContent).trim();
+        }).filter(Boolean);
+        return {
+          mode: "list",
+          column: filterInput.id,
+          rows: texts.length,
+          bad: texts.filter((t) => !t.toLowerCase().includes(needle)),
+        };
+      }
+
+      // Single record: Maximo opens it directly; its description field contains the text.
+      // Maximo's field ids are generated, so prefer one labelled as a
+      // description, else any visible field containing the text.
+      const label = (el) => `${el.id} ${el.getAttribute("aria-label") || ""} ${el.title || ""}`;
+      const candidates = inputs.filter(
+        (el) => el.offsetParent !== null && valueOf(el).toLowerCase().includes(needle)
+      );
+      const field = candidates.find((el) => /desc/i.test(label(el))) || candidates[0];
+      if (field) return { mode: "record", field: label(field).trim() };
+      return null;
+    }, text)
+    .catch(() => null);
+}
+
+// After opening an app with a description filter, check Maximo applied it:
+// either the list's description filter holds the text and every row's
+// description contains it, or (one match) the record opened directly with a
+// description containing it. Maximo sometimes ignores loadapp and shows the
+// Start Center, so reload the same URL up to twice.
+async function expectFilteredBy(page, text) {
+  test.info().setTimeout(test.info().timeout + 60_000);
+  for (let attempt = 1; ; attempt++) {
+    let result = null;
+    try {
+      await expect
+        .poll(async () => (result = await readFilterResult(page, text)), { timeout: 20_000 })
+        .not.toBeNull();
+    } catch (e) {
+      if (attempt >= 3) {
+        throw new Error(
+          `Maximo didn't show a list filtered on description "${text}" or a record with that description (URL: ${page.url()})`
+        );
+      }
+      await page.reload();
+      await page.waitForLoadState("load");
+      continue;
+    }
+    test.info().annotations.push({ type: "filter result", description: JSON.stringify(result) });
+    if (result.mode === "list") {
+      expect(result.bad, `rows whose description doesn't contain "${text}"`).toEqual([]);
+    }
+    return result;
+  }
+}
+
 // True when el has real keyboard focus (its frame is focused and it's the active element).
 function hasRealFocus(locator) {
   return locator.evaluate((el) => el.ownerDocument.hasFocus() && el.ownerDocument.activeElement === el);
@@ -178,6 +256,7 @@ module.exports = {
   maximoFrame,
   iframeTextField,
   gotoApp,
+  expectFilteredBy,
   hasRealFocus,
   SHELL_URL,
   DEFAULT_KEYS,

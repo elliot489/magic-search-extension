@@ -71,3 +71,19 @@
   background: #0f62fe;
   color: #ffffff;
 }
+
+/* Text after the app name: Enter opens the list filtered on description. */
+.magic-search-option.is-selected[data-filter]::after {
+  content: "Description: " attr(data-filter);
+  float: right;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 21px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: #393939;
+  color: #ffffff;
+}
