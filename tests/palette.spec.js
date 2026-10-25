@@ -1,4 +1,4 @@
-const { test, expect, palette, openPalette, DEFAULT_KEYS } = require("./fixtures");
+const { test, expect, palette, openPalette, enterTarget, gotoApp, DEFAULT_KEYS } = require("./fixtures");
 
 test.describe("opening and closing", () => {
   test("Cmd/Ctrl+K opens the search box with the cursor in it", async ({ page }) => {
@@ -109,35 +109,26 @@ test.describe("filtering", () => {
     await openPalette(page);
     await palette(page).input.pressSequentially("a");
     await expect(palette(page).options).toHaveCount(3);
-    await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === "asset"),
-      palette(page).input.press("Enter"),
-    ]);
-    expect(new URL(page.url()).searchParams.get("additionalevent")).toBeNull();
-    await page.waitForLoadState("load");
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("asset");
+    expect(target.searchParams.get("additionalevent")).toBeNull();
   });
 
   test("new + several matches opens the top one ready to insert", async ({ page }) => {
     await openPalette(page);
     await palette(page).input.pressSequentially("new orders");
     await expect(palette(page).options).toHaveText(["Work Orders", "Purchase Orders"]);
-    await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === "wotrack"),
-      palette(page).input.press("Enter"),
-    ]);
-    expect(new URL(page.url()).searchParams.get("additionalevent")).toBe("insert");
-    await page.waitForLoadState("load");
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("wotrack");
+    expect(target.searchParams.get("additionalevent")).toBe("insert");
   });
 
   test('"o" + Enter opens Work Orders (word match beats Locations)', async ({ page }) => {
     await openPalette(page);
     await palette(page).input.pressSequentially("o");
-    await Promise.all([
-      page.waitForURL((url) => url.searchParams.get("value") === "wotrack"),
-      palette(page).input.press("Enter"),
-    ]);
-    expect(new URL(page.url()).searchParams.get("additionalevent")).toBeNull();
-    await page.waitForLoadState("load");
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("wotrack");
+    expect(target.searchParams.get("additionalevent")).toBeNull();
   });
 
   test("Enter does nothing when nothing matches", async ({ page }) => {
@@ -165,18 +156,25 @@ test.describe("opening apps", () => {
       await openPalette(page);
       await palette(page).input.pressSequentially(query);
       await expect(palette(page).options).toHaveCount(1);
-      await Promise.all([
-        page.waitForURL((url) => url.searchParams.get("value") === app),
-        palette(page).input.press("Enter"),
-      ]);
-      const url = new URL(page.url());
+      const target = await enterTarget(page);
+      expect(target.searchParams.get("value")).toBe(app);
+      const url = target;
       expect(url.pathname).toMatch(/manage-shell\/index\.html$/);
       expect(url.searchParams.get("event")).toBe("loadapp");
       // Plain matches open the list view, not a new record.
       expect(url.searchParams.get("additionalevent")).toBeNull();
-      await page.waitForLoadState("load");
     });
   }
+});
+
+test("choosing the app that's already open reloads it", async ({ page }) => {
+  // Same address as the current page: must still load, not just close the palette.
+  await gotoApp(page, "wotrack");
+  await openPalette(page);
+  await palette(page).input.pressSequentially("wo");
+  const target = await enterTarget(page);
+  expect(target.searchParams.get("value")).toBe("wotrack");
+  expect(target.searchParams.get("additionalevent")).toBeNull();
 });
 
 test.describe("inserting new records", () => {
@@ -195,16 +193,13 @@ test.describe("inserting new records", () => {
       await palette(page).input.pressSequentially(query);
       await expect(palette(page).options).toHaveCount(1);
       await expect(palette(page).list).toHaveClass(/is-insert/);
-      await Promise.all([
-        page.waitForURL((url) => url.searchParams.get("value") === app),
-        palette(page).input.press("Enter"),
-      ]);
-      const url = new URL(page.url());
+      const target = await enterTarget(page);
+      expect(target.searchParams.get("value")).toBe(app);
+      const url = target;
       expect(url.pathname).toMatch(/manage-shell\/index\.html$/);
       expect(url.searchParams.get("event")).toBe("loadapp");
       expect(url.searchParams.get("value")).toBe(app);
       expect(url.searchParams.get("additionalevent")).toBe("insert");
-      await page.waitForLoadState("load");
     });
   }
 
@@ -223,5 +218,69 @@ test.describe("inserting new records", () => {
     await palette(page).input.press("Enter");
     await expect(palette(page).backdrop).toBeVisible();
     expect(page.url()).toBe(before);
+  });
+});
+
+test.describe("filtering an app's list", () => {
+  const selected = (page) => page.locator(".magic-search-option.is-selected");
+
+  const shown = [
+    ["assets first", ["Assets"], "Assets", "first"],
+    ["Assets First", ["Assets"], "Assets", "First"],
+    ["wo pump", ["Work Orders"], "Work Orders", "pump"],
+    ["work orders pump", ["Work Orders"], "Work Orders", "pump"],
+    ["po 1001", ["Purchase Orders"], "Purchase Orders", "1001"],
+    ["a first", ["Assets", "Locations", "Purchase Orders"], "Assets", "first"],
+  ];
+
+  for (const [query, options, top, filter] of shown) {
+    test(`"${query}" shows ${top} with filter "${filter}"`, async ({ page }) => {
+      await openPalette(page);
+      await palette(page).input.pressSequentially(query);
+      await expect(palette(page).options).toHaveText(options);
+      await expect(selected(page)).toHaveText([top]);
+      await expect(selected(page)).toHaveAttribute("data-filter", filter);
+    });
+  }
+
+  test("no filter label without extra words", async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("work o");
+    await expect(selected(page)).toHaveText(["Work Orders"]);
+    await expect(selected(page)).not.toHaveAttribute("data-filter");
+  });
+
+  const opened = [
+    ["assets first", "asset", "first"],
+    ["wo pump", "wotrack", "pump"],
+    ["work orders pump", "wotrack", "pump"],
+    ["po 1001", "po", "1001"],
+    ["loc office", "location", "office"],
+  ];
+
+  for (const [query, app, filter] of opened) {
+    test(`"${query}" + Enter goes to ${app} filtered on description "${filter}"`, async ({ page }) => {
+      await openPalette(page);
+      await palette(page).input.pressSequentially(query);
+      const target = await enterTarget(page);
+      expect(target.searchParams.get("value")).toBe(app);
+      const url = target;
+      expect(url.searchParams.get("event")).toBe("loadapp");
+      expect(url.searchParams.get("value")).toBe(app);
+      expect(url.searchParams.get("additionalevent")).toBe("useqbe");
+      expect(url.searchParams.get("additionaleventvalue")).toBe(`description=${filter}`);
+    });
+  }
+
+  test("new + app + text opens a new record and ignores the text", async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("new wo pump");
+    await expect(selected(page)).toHaveText(["Work Orders"]);
+    await expect(selected(page)).not.toHaveAttribute("data-filter");
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("wotrack");
+    const url = target;
+    expect(url.searchParams.get("additionalevent")).toBe("insert");
+    expect(url.searchParams.get("additionaleventvalue")).toBeNull();
   });
 });

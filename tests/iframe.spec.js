@@ -6,6 +6,7 @@ const {
   gotoApp,
   maximoFrame,
   iframeTextField,
+  focusField,
   hasRealFocus,
   DEFAULT_KEYS,
 } = require("./fixtures");
@@ -16,14 +17,6 @@ test.describe("shortcut inside Maximo's iframe", () => {
   test.beforeEach(async ({ page }) => {
     await gotoApp(page, "wotrack");
   });
-
-  async function focusField(page) {
-    const field = iframeTextField(page);
-    await expect(field).toBeVisible({ timeout: 30_000 });
-    await field.click();
-    await expect.poll(() => hasRealFocus(field)).toBe(true);
-    return field;
-  }
 
   test("Cmd/Ctrl+K in a text field opens the palette", async ({ page }) => {
     await focusField(page);

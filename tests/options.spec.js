@@ -4,6 +4,7 @@ const {
   palette,
   openPalette,
   gotoApp,
+  focusField,
   hasRealFocus,
   DEFAULT_KEYS,
   DEFAULT_LABEL,
@@ -47,8 +48,6 @@ test.describe("custom shortcut", () => {
   test("the new shortcut opens the palette and the old one doesn't", async ({ options, page }) => {
     await options.record(CUSTOM);
     await page.bringToFront();
-    await page.reload();
-    await page.waitForLoadState("load");
 
     await openPalette(page, CUSTOM);
     await expect(palette(page).input).toBeFocused();
@@ -75,9 +74,8 @@ test.describe("custom shortcut", () => {
   test("the new shortcut works inside Maximo's iframe", async ({ options, page }) => {
     await options.record(CUSTOM);
     await page.bringToFront();
-    const field = await gotoApp(page, "wotrack");
-    await field.click();
-    await expect.poll(() => hasRealFocus(field)).toBe(true);
+    await gotoApp(page, "wotrack");
+    const field = await focusField(page);
 
     await openPalette(page, CUSTOM);
     await page.keyboard.press("Escape");
