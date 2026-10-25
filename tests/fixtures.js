@@ -146,6 +146,24 @@ function iframeTextField(page) {
     .first();
 }
 
+// Open an app in the Manage shell and wait for a text field in Maximo's iframe.
+// Maximo sometimes ignores loadapp and shows the Start Center instead, so
+// retry the navigation a few times before giving up.
+async function gotoApp(page, app) {
+  test.info().setTimeout(test.info().timeout + 60_000);
+  const field = iframeTextField(page);
+  for (let attempt = 1; ; attempt++) {
+    await page.goto(appUrl(app));
+    await page.waitForLoadState("load");
+    try {
+      await expect(field).toBeVisible({ timeout: 20_000 });
+      return field;
+    } catch (e) {
+      if (attempt >= 3) throw e;
+    }
+  }
+}
+
 // True when el has real keyboard focus (its frame is focused and it's the active element).
 function hasRealFocus(locator) {
   return locator.evaluate((el) => el.ownerDocument.hasFocus() && el.ownerDocument.activeElement === el);
@@ -159,6 +177,7 @@ module.exports = {
   appUrl,
   maximoFrame,
   iframeTextField,
+  gotoApp,
   hasRealFocus,
   SHELL_URL,
   DEFAULT_KEYS,

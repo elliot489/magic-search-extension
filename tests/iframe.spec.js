@@ -3,7 +3,7 @@ const {
   expect,
   palette,
   openPalette,
-  appUrl,
+  gotoApp,
   maximoFrame,
   iframeTextField,
   hasRealFocus,
@@ -14,8 +14,7 @@ const {
 // These tests put the cursor in a real field there before pressing the shortcut.
 test.describe("shortcut inside Maximo's iframe", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(appUrl("wotrack"));
-    await page.waitForLoadState("load");
+    await gotoApp(page, "wotrack");
   });
 
   async function focusField(page) {
