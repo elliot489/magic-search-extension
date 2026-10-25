@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const { test: base, chromium, expect } = require("@playwright/test");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -60,11 +61,24 @@ const sessionFile = require("./session-file");
 
 class MaximoSession {
   async start() {
-    this.context = await chromium.launchPersistentContext("", {
+    // A throwaway profile with Chrome's password manager off, so no
+    // "Save password?" prompt appears after signing in (it can take the
+    // keyboard away from the page).
+    this.profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "magic-search-test-"));
+    fs.mkdirSync(path.join(this.profileDir, "Default"));
+    fs.writeFileSync(
+      path.join(this.profileDir, "Default", "Preferences"),
+      JSON.stringify({ credentials_enable_service: false, profile: { password_manager_enabled: false } })
+    );
+    this.context = await chromium.launchPersistentContext(this.profileDir, {
       channel: "chromium",
       headless: !HEADED,
       viewport: { width: 1400, height: 900 },
-      args: [`--disable-extensions-except=${ROOT}`, `--load-extension=${ROOT}`],
+      args: [
+        `--disable-extensions-except=${ROOT}`,
+        `--load-extension=${ROOT}`,
+        "--disable-features=PasswordManagerOnboarding,PasswordLeakDetection",
+      ],
     });
     // Diagnostics: in every frame, before the page's own scripts, note the
     // last key press Chrome delivered (printed by frameReport on failures).
@@ -82,16 +96,28 @@ class MaximoSession {
         true
       );
     });
-    this.page = this.context.pages()[0] || (await this.context.newPage());
-    // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
-    // "Leave site?": always leave. Other dialogs are dismissed as usual.
-    this.page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
     const saved = sessionFile.load();
     if (saved?.cookies?.length) await this.context.addCookies(saved.cookies).catch(() => {});
+
+    // Sign in on a throwaway tab, then close it: anything the browser shows
+    // for that tab after the login form (e.g. a password prompt) goes with it.
+    this.page = this.context.pages()[0] || (await this.context.newPage());
     await logIn(this.page);
     await this.loadShell();
     await this.checkSessionLimit();
     await this.saveSession();
+    const loginTab = this.page;
+
+    // The tab every test shares.
+    this.page = await this.context.newPage();
+    // Leaving a page with unsaved Maximo changes (e.g. a new record) may ask
+    // "Leave site?": always leave. Other dialogs are dismissed as usual.
+    this.page.on("dialog", (d) => (d.type() === "beforeunload" ? d.accept() : d.dismiss()).catch(() => {}));
+    await loginTab.close();
+    await this.page.bringToFront();
+    await this.page.goto(SHELL_URL);
+    await this.page.waitForLoadState("load");
+    await this.checkSessionLimit();
   }
 
   // Keep the login and Maximo's sign-out URL for the rest of the run.
@@ -127,6 +153,7 @@ class MaximoSession {
   async stop() {
     if (this.context) await this.saveSession().catch(() => {});
     await this.context?.close().catch(() => {});
+    if (this.profileDir) fs.rmSync(this.profileDir, { recursive: true, force: true });
   }
 
   // Maximo answers with this page when the login has too many UI sessions.
@@ -247,10 +274,6 @@ async function frameReport(page) {
         .evaluate(() => ({
           // Chrome delivered this key press to the frame (test logger):
           delivered: document.documentElement?.getAttribute("data-test-last-keydown") || "none",
-          // Our listeners: frame script present, last key they saw, toggles:
-          frameScript: document.documentElement?.getAttribute("data-magic-search-frame") || "no",
-          ourLastKey: document.documentElement?.getAttribute("data-magic-search-last-key") || "none",
-          toggle: document.documentElement?.getAttribute("data-magic-search-toggle") || "-",
           listening: document.documentElement?.getAttribute("data-magic-search") || "no",
           focus: document.hasFocus(),
           active: document.activeElement
