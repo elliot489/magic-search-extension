@@ -7,9 +7,10 @@
   const aliasesEl = document.getElementById("aliases");
   const searchEl = document.getElementById("alias-search");
 
-  let variantChoices = {};
+  let appVariants = {}; // { "<origin>": { groupName: appId } } (see MagicSearchApps.variantChoicesFor)
   let aliasEdits = {};
   let lastUsed = null; // { key, entry } of the list from the Maximo page used last
+  let sites = []; // [{ origin, apps }]: each Maximo server's apps, from its saved lists
 
   const el = (tag, props = {}, ...children) => {
     const node = Object.assign(document.createElement(tag), props);
@@ -23,16 +24,49 @@
   }
 
   function groups() {
-    return lastUsed ? A.buildGroups(lastUsed.entry.apps, variantChoices, aliasEdits) : [];
+    if (!lastUsed) return [];
+    const origin = parseKey(lastUsed.key).server;
+    return A.buildGroups(lastUsed.entry.apps, A.variantChoicesFor(appVariants, origin), aliasEdits);
+  }
+
+  // Each Maximo server's apps: all of its saved lists together (one per user).
+  function sitesFrom(local) {
+    const byOrigin = new Map();
+    for (const key of Object.keys(local).filter((k) => k.startsWith("apps:")).sort()) {
+      const apps = (local[key] && local[key].apps) || [];
+      const { server } = parseKey(key);
+      if (!byOrigin.has(server)) byOrigin.set(server, new Map());
+      const seen = byOrigin.get(server);
+      for (const app of apps) if (!seen.has(app.id)) seen.set(app.id, app);
+    }
+    return [...byOrigin].map(([origin, apps]) => ({ origin, apps: [...apps.values()] }));
+  }
+
+  // Choices saved by older versions applied to every site: copy them to each
+  // saved site that has those versions, then drop them.
+  async function migrateSharedChoices() {
+    const shared = Object.entries(appVariants).filter(([, v]) => typeof v === "string");
+    if (!shared.length || !sites.length) return;
+    const next = Object.fromEntries(Object.entries(appVariants).filter(([, v]) => typeof v !== "string"));
+    for (const site of sites) {
+      const names = new Set(A.buildGroups(site.apps).filter((g) => g.versions.length > 1).map((g) => g.name));
+      const own = { ...(next[site.origin] || {}) };
+      for (const [name, id] of shared) if (names.has(name) && !(name in own)) own[name] = id;
+      if (Object.keys(own).length) next[site.origin] = own;
+    }
+    appVariants = next;
+    await chrome.storage.sync.set({ appVariants: next });
   }
 
   async function load() {
     const local = await chrome.storage.local.get(null);
     const sync = await chrome.storage.sync.get(["appVariants", "appAliases"]);
-    variantChoices = sync.appVariants || {};
+    appVariants = sync.appVariants || {};
     aliasEdits = sync.appAliases || {};
     const key = local.appsLastUsed;
     lastUsed = key && local[key] && Array.isArray(local[key].apps) ? { key, entry: local[key] } : null;
+    sites = sitesFrom(local);
+    await migrateSharedChoices();
     renderLists(local);
     renderVariants();
     renderAliases();
@@ -75,30 +109,41 @@
   }
 
   // ---- Versions ----
+  // One section per Maximo server, listing only the versions that server has.
   function renderVariants() {
-    const multi = groups().filter((g) => g.versions.length > 1);
-    if (!multi.length) {
-      variantsEl.replaceChildren(
-        el("p", { className: "empty", textContent: lastUsed ? "None: each of your apps has one version." : "Open Maximo first to load your apps." })
-      );
+    if (!sites.length) {
+      variantsEl.replaceChildren(el("p", { className: "empty", textContent: "Open Maximo first to load your apps." }));
       return;
     }
-    const rows = multi.map((g, i) => {
-      const choices = el("td", { className: "variant-choices" });
-      for (const v of g.versions) {
-        const radio = el("input", { type: "radio", name: `variant-${i}`, value: v.id, checked: v.id === g.app.id });
-        radio.addEventListener("change", () => {
-          variantChoices = { ...variantChoices, [g.name]: v.id };
-          chrome.storage.sync.set({ appVariants: variantChoices });
-        });
-        choices.append(el("label", {}, radio, ` ${v.label}`));
+    const sections = sites.map((site, s) => {
+      const choices = A.variantChoicesFor(appVariants, site.origin);
+      const multi = A.buildGroups(site.apps, choices).filter((g) => g.versions.length > 1);
+      const section = el("div", { className: "variant-site" }, el("h3", { textContent: site.origin }));
+      section.dataset.site = site.origin;
+      if (!multi.length) {
+        section.append(el("p", { className: "empty", textContent: "None: each app has one version on this server." }));
+        return section;
       }
-      const tr = el("tr", {}, el("td", { textContent: A.baseLabel(g.label) }), choices);
-      tr.className = "variant-row";
-      tr.dataset.group = g.name;
-      return tr;
+      const rows = multi.map((g, i) => {
+        const cell = el("td", { className: "variant-choices" });
+        for (const v of g.versions) {
+          const radio = el("input", { type: "radio", name: `variant-${s}-${i}`, value: v.id, checked: v.id === g.app.id });
+          radio.addEventListener("change", () => {
+            const own = typeof appVariants[site.origin] === "object" ? appVariants[site.origin] : {};
+            appVariants = { ...appVariants, [site.origin]: { ...own, [g.name]: v.id } };
+            chrome.storage.sync.set({ appVariants });
+          });
+          cell.append(el("label", {}, radio, ` ${v.label}`));
+        }
+        const tr = el("tr", {}, el("td", { textContent: A.baseLabel(g.label) }), cell);
+        tr.className = "variant-row";
+        tr.dataset.group = g.name;
+        return tr;
+      });
+      section.append(el("table", {}, ...rows));
+      return section;
     });
-    variantsEl.replaceChildren(el("table", {}, ...rows));
+    variantsEl.replaceChildren(...sections);
   }
 
   // ---- Aliases ----

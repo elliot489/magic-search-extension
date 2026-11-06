@@ -77,7 +77,7 @@ var MagicSearchCatalog = (() => {
   async function init() {
     try {
       const sync = await chrome.storage.sync.get(["appVariants", "appAliases"]);
-      variantChoices = sync.appVariants || {};
+      variantChoices = A.variantChoicesFor(sync.appVariants, location.origin);
       aliasEdits = sync.appAliases || {};
     } catch (_) {}
     rebuild();
@@ -95,7 +95,7 @@ var MagicSearchCatalog = (() => {
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "sync" && (changes.appVariants || changes.appAliases)) {
-      if (changes.appVariants) variantChoices = changes.appVariants.newValue || {};
+      if (changes.appVariants) variantChoices = A.variantChoicesFor(changes.appVariants.newValue, location.origin);
       if (changes.appAliases) aliasEdits = changes.appAliases.newValue || {};
       rebuild();
     }
