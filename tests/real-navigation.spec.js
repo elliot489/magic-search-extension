@@ -7,7 +7,10 @@ const {
   maximoFrame,
   expectFilteredBy,
   waitForMaximoIdle,
+  SHELL_URL,
 } = require("./fixtures");
+
+const SITE = new URL(SHELL_URL).origin;
 
 // The other tests only check where Enter would go. These few really load the
 // page, to prove Maximo does what the URL asks. Each one starts a Maximo
@@ -15,7 +18,7 @@ const {
 test.describe("Maximo really opens what Enter asks for", () => {
   // Use the standard versions of these apps (the test list defaults to Oil).
   test.beforeEach(async ({ ext }) => {
-    await ext.set("sync", { appVariants: { "work order tracking": "WOTRACK", assets: "ASSET" } });
+    await ext.set("sync", { appVariants: { [SITE]: { "work order tracking": "WOTRACK", assets: "ASSET" } } });
   });
   test.afterEach(async ({ ext }) => {
     await ext.remove("sync", "appVariants");

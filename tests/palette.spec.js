@@ -1,4 +1,6 @@
-const { test, expect, palette, openPalette, enterTarget, gotoApp, DEFAULT_KEYS } = require("./fixtures");
+const { test, expect, palette, openPalette, enterTarget, gotoApp, DEFAULT_KEYS, SHELL_URL } = require("./fixtures");
+
+const SITE = new URL(SHELL_URL).origin;
 
 // These tests use the small test app list in tests/data (see
 // MaximoSession.routeAppList), where the (Oil) version of each app is the one
@@ -189,7 +191,7 @@ test.describe("opening apps", () => {
 
 test("choosing the app that's already open reloads it", async ({ page, ext }) => {
   // Same address as the current page: must still load, not just close the palette.
-  await ext.set("sync", { appVariants: { "work order tracking": "WOTRACK" } });
+  await ext.set("sync", { appVariants: { [SITE]: { "work order tracking": "WOTRACK" } } });
   try {
     await gotoApp(page, "wotrack");
     await openPalette(page);
