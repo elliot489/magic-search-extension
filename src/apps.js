@@ -100,6 +100,21 @@ var MagicSearchApps = (() => {
     );
   }
 
+  // The version choices for one Maximo site. appVariants in chrome.storage.sync
+  // is { "<origin>": { groupName: appId } }, one entry per site, because sites
+  // have different versions (e.g. "(Well-Safe)" on one site only). Earlier
+  // versions of the extension saved { groupName: appId } for all sites; such
+  // entries still apply where the site hasn't a choice of its own.
+  function variantChoicesFor(appVariants, origin) {
+    const shared = {};
+    let site = {};
+    for (const [key, value] of Object.entries(appVariants || {})) {
+      if (typeof value === "string") shared[key] = value;
+      else if (key === origin && value && typeof value === "object") site = value;
+    }
+    return { ...shared, ...site };
+  }
+
   // Groups in menu order: { name, label, app (chosen version), versions,
   // aliases: [{ alias, kind }], edited }.
   // variantChoices: { groupName: appId }; aliasEdits: { groupName: [alias] }.
@@ -184,6 +199,7 @@ var MagicSearchApps = (() => {
     withInsertFlags,
     generatedAliases,
     buildGroups,
+    variantChoicesFor,
     matchGroup,
     rankGroups,
     sharedAliases,

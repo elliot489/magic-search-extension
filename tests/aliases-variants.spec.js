@@ -6,7 +6,31 @@ const {
   enterTarget,
   appListState,
   FIXTURE_MODULES,
+  SHELL_URL,
 } = require("./fixtures");
+
+// The Maximo server the tests run against; version choices are saved per server.
+const SITE = new URL(SHELL_URL).origin;
+// Another Maximo server's saved list (only in storage: nothing loads from it),
+// with a version the test server doesn't have.
+const OTHER_SITE = "https://other-maximo.test";
+const OTHER_LIST_KEY = `apps:${OTHER_SITE}|TESTER`;
+const OTHER_LIST = {
+  fetchedAt: new Date().toISOString(),
+  apps: [
+    { id: "WOTRACK", label: "Work Order Tracking", module: "Work Orders", canInsert: true },
+    { id: "WSWOTRACK", label: "Work Order Tracking (Well-Safe)", module: "Work Orders", canInsert: true },
+    { id: "ASSET", label: "Assets", module: "Assets", canInsert: true },
+  ],
+};
+const variantRow = (optionsPage, site, group) =>
+  optionsPage.locator(`.variant-site[data-site="${site}"] .variant-row[data-group="${group}"]`);
+// The options page shows one environment (Maximo server) at a time.
+const siteItem = (optionsPage, site) => optionsPage.locator(`.site-item[data-site="${site}"]`);
+async function selectSite(optionsPage, site) {
+  await siteItem(optionsPage, site).click();
+  await expect(siteItem(optionsPage, site)).toHaveAttribute("aria-selected", "true");
+}
 
 // One app per group of versions (e.g. Work Order Tracking and its (Oil)
 // version), chosen on the options page; generated aliases, editable there.
@@ -31,7 +55,7 @@ function modulesWithout(appId) {
 
 test.describe("app versions and aliases", () => {
   test.afterEach(async ({ ext }) => {
-    await ext.remove("sync", ["appVariants", "appAliases"]);
+    await ext.remove("sync", ["appVariants", "appAliases", "siteDescriptions"]);
   });
 
   test("each app is listed once, the (Oil) version by default", async ({ page }) => {
@@ -45,13 +69,13 @@ test.describe("app versions and aliases", () => {
 
   test("choosing the standard version on the options page", async ({ page, options, ext }) => {
     await options.page.bringToFront();
-    const row = options.page.locator('.variant-row[data-group="work order tracking"]');
+    const row = variantRow(options.page, SITE, "work order tracking");
     await expect(row.locator('input[type="radio"]')).toHaveCount(2);
     await expect(row.locator('input[value="PLUSGWO"]')).toBeChecked();
     await row.locator('input[value="WOTRACK"]').check();
     await expect
       .poll(async () => (await ext.get("sync", "appVariants")).appVariants)
-      .toEqual({ "work order tracking": "WOTRACK" });
+      .toEqual({ [SITE]: { "work order tracking": "WOTRACK" } });
 
     await page.bringToFront();
     await search(page, "work order");
@@ -99,6 +123,103 @@ test.describe("app versions and aliases", () => {
         }, { timeout: 30_000 })
         .toBe(true);
       await expect.poll(() => appListState(page)).toMatch(/^saved:/);
+    }
+  });
+
+  test("each server lists only its own versions, one server at a time", async ({ options, ext }) => {
+    try {
+      await ext.set("local", { [OTHER_LIST_KEY]: OTHER_LIST });
+      await options.page.reload();
+      await options.page.bringToFront();
+      // Both servers are listed; the one used last is picked, and only its
+      // versions are shown.
+      await expect(options.page.locator(".site-item")).toHaveCount(2);
+      await expect(siteItem(options.page, SITE)).toHaveAttribute("aria-selected", "true");
+      await expect(options.page.locator(".variant-site")).toHaveCount(1);
+      await expect(variantRow(options.page, OTHER_SITE, "work order tracking")).toHaveCount(0);
+      const here = variantRow(options.page, SITE, "work order tracking");
+      await expect(here.locator('input[value="PLUSGWO"]')).toBeChecked();
+      await expect(here).not.toContainText("Well-Safe");
+      await expect(variantRow(options.page, SITE, "assets")).toHaveCount(1);
+
+      // The other server has a Well-Safe version; this one has an Oil version.
+      await selectSite(options.page, OTHER_SITE);
+      await expect(siteItem(options.page, SITE)).toHaveAttribute("aria-selected", "false");
+      await expect(options.page.locator(".variant-site")).toHaveCount(1);
+      await expect(here).toHaveCount(0);
+      const other = variantRow(options.page, OTHER_SITE, "work order tracking");
+      await expect(other.locator('input[type="radio"]')).toHaveCount(2);
+      await expect(other.locator('input[value="WSWOTRACK"]')).toBeChecked();
+      await expect(other).toContainText("Work Order Tracking (Well-Safe)");
+      await expect(other).not.toContainText("(Oil)");
+      // Assets has one version on the other server: nothing to choose there.
+      await expect(variantRow(options.page, OTHER_SITE, "assets")).toHaveCount(0);
+    } finally {
+      await ext.remove("local", OTHER_LIST_KEY);
+    }
+  });
+
+  test("a choice for one server doesn't change another", async ({ page, options, ext }) => {
+    try {
+      await ext.set("local", { [OTHER_LIST_KEY]: OTHER_LIST });
+      await options.page.reload();
+      await options.page.bringToFront();
+      await selectSite(options.page, OTHER_SITE);
+      await variantRow(options.page, OTHER_SITE, "work order tracking").locator('input[value="WOTRACK"]').check();
+      await expect
+        .poll(async () => (await ext.get("sync", "appVariants")).appVariants)
+        .toEqual({ [OTHER_SITE]: { "work order tracking": "WOTRACK" } });
+      // This server still uses its default, the Oil version.
+      await selectSite(options.page, SITE);
+      await expect(variantRow(options.page, SITE, "work order tracking").locator('input[value="PLUSGWO"]')).toBeChecked();
+      await page.bringToFront();
+      await search(page, "work order");
+      await expect(palette(page).options).toHaveText(["Work Order Tracking (Oil)"]);
+      await page.keyboard.press("Escape");
+    } finally {
+      await ext.remove("local", OTHER_LIST_KEY);
+    }
+  });
+
+  test("a choice saved for all servers by an older version moves to each server", async ({ page, options, ext }) => {
+    await ext.set("sync", { appVariants: { "work order tracking": "WOTRACK" } });
+    await options.page.reload();
+    await expect
+      .poll(async () => (await ext.get("sync", "appVariants")).appVariants)
+      .toEqual({ [SITE]: { "work order tracking": "WOTRACK" } });
+    await expect(variantRow(options.page, SITE, "work order tracking").locator('input[value="WOTRACK"]')).toBeChecked();
+    await page.bringToFront();
+    await search(page, "work order");
+    await expect(palette(page).options).toHaveText(["Work Order Tracking"]);
+    await page.keyboard.press("Escape");
+  });
+
+  test("each server can have a description", async ({ options, ext }) => {
+    try {
+      await ext.set("local", { [OTHER_LIST_KEY]: OTHER_LIST });
+      await options.page.reload();
+      await options.page.bringToFront();
+      const description = options.page.locator(".site-description");
+      await expect(description).toHaveValue("");
+      await description.fill("Local test server");
+      await expect(siteItem(options.page, SITE).locator(".site-item-description")).toHaveText("Local test server");
+      await selectSite(options.page, OTHER_SITE);
+      await expect(description).toHaveValue("");
+      await description.fill("Well-Safe client");
+      await expect
+        .poll(async () => (await ext.get("sync", "siteDescriptions")).siteDescriptions)
+        .toEqual({ [SITE]: "Local test server", [OTHER_SITE]: "Well-Safe client" });
+
+      // Kept after a reload; clearing the field removes it.
+      await options.page.reload();
+      await expect(siteItem(options.page, OTHER_SITE).locator(".site-item-description")).toHaveText("Well-Safe client");
+      await expect(description).toHaveValue("Local test server");
+      await description.fill("");
+      await expect
+        .poll(async () => (await ext.get("sync", "siteDescriptions")).siteDescriptions)
+        .toEqual({ [OTHER_SITE]: "Well-Safe client" });
+    } finally {
+      await ext.remove("local", OTHER_LIST_KEY);
     }
   });
 
@@ -168,7 +289,7 @@ test.describe("app versions and aliases", () => {
 
   test("aliases open whichever version is chosen", async ({ page, ext }) => {
     await ext.set("sync", {
-      appVariants: { "work order tracking": "WOTRACK" },
+      appVariants: { [SITE]: { "work order tracking": "WOTRACK" } },
       appAliases: { "work order tracking": ["job", "wo"] },
     });
     // An edited alias beats Job Plans, whose name starts with "job".
@@ -177,7 +298,7 @@ test.describe("app versions and aliases", () => {
     let target = await enterTarget(page);
     expect(target.searchParams.get("value")).toBe("wotrack");
 
-    await ext.set("sync", { appVariants: { "work order tracking": "PLUSGWO" } });
+    await ext.set("sync", { appVariants: { [SITE]: { "work order tracking": "PLUSGWO" } } });
     await search(page, "job");
     target = await enterTarget(page);
     expect(target.searchParams.get("value")).toBe("plusgwo");
