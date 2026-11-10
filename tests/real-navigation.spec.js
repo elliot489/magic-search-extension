@@ -7,6 +7,7 @@ const {
   maximoFrame,
   expectFilteredBy,
   readListColumn,
+  withDefaults,
   waitForMaximoIdle,
   SHELL_URL,
 } = require("./fixtures");
@@ -57,17 +58,20 @@ test.describe("Maximo really opens what Enter asks for", () => {
   });
 
   test('"wo pump" + Enter opens Work Orders filtered on description', async ({ page }) => {
+    // Plus the user's default site and historyflag=0 (read before the page changes).
+    const expected = await withDefaults(page, "description=pump", { history: true });
     const url = await enterAndLoad(page, "wo pump", "wotrack");
     expect(url.searchParams.get("additionalevent")).toBe("useqbe");
-    expect(url.searchParams.get("additionaleventvalue")).toBe("description=pump");
+    expect(url.searchParams.get("additionaleventvalue")).toBe(expected);
     await expectFilteredBy(page, "pump");
   });
 
   // "first" matches a single asset on Elliot's instance, so Maximo skips the
   // list and opens that record; either outcome passes.
   test('"assets first" + Enter opens Assets filtered on description', async ({ page }) => {
+    const expected = await withDefaults(page, "description=first");
     const url = await enterAndLoad(page, "assets first", "asset");
-    expect(url.searchParams.get("additionaleventvalue")).toBe("description=first");
+    expect(url.searchParams.get("additionaleventvalue")).toBe(expected);
     await expectFilteredBy(page, "first");
   });
 
@@ -137,19 +141,26 @@ test.describe("Maximo really opens what Enter asks for", () => {
     }
   });
 
-  // A status matches exactly: "=APPR" doesn't also list WAPPR.
-  test('"wo <STATUS>" + Enter lists only that status', async ({ page }) => {
+  // A status matches exactly: "=APPR" doesn't also list WAPPR. The work
+  // order's own site is typed, so the user's default site doesn't apply.
+  test('"wo <STATUS> <SITE>" + Enter lists only that status', async ({ page, ext }) => {
     const wo = await someWorkOrder(page);
-    const url = await enterAndLoad(page, `wo ${wo.status}`, "wotrack");
-    expect(url.searchParams.get("additionaleventvalue")).toBe(`status==${wo.status}`);
-    let result = null;
-    await expect
-      .poll(async () => (result = await readListColumn(page, `=${wo.status}`)), { timeout: 30_000 })
-      .not.toBeNull();
-    test.info().annotations.push({ type: "status column", description: JSON.stringify(result) });
-    if (result.mode === "list") {
-      expect(result.rows.length, "rows listed").toBeGreaterThan(0);
-      expect(result.rows.filter((r) => r.toUpperCase() !== wo.status)).toEqual([]);
+    await ext.set("sync", { extraSites: { [SITE]: [wo.siteid] } });
+    try {
+      await expect(page.locator("html")).toHaveAttribute("data-magic-search-sites", new RegExp(`\\b${wo.siteid}\\b`));
+      const url = await enterAndLoad(page, `wo ${wo.status} ${wo.siteid}`, "wotrack");
+      expect(url.searchParams.get("additionaleventvalue")).toBe(`status==${wo.status}|siteid==${wo.siteid}`);
+      let result = null;
+      await expect
+        .poll(async () => (result = await readListColumn(page, `=${wo.status}`)), { timeout: 30_000 })
+        .not.toBeNull();
+      test.info().annotations.push({ type: "status column", description: JSON.stringify(result) });
+      if (result.mode === "list") {
+        expect(result.rows.length, "rows listed").toBeGreaterThan(0);
+        expect(result.rows.filter((r) => r.toUpperCase() !== wo.status)).toEqual([]);
+      }
+    } finally {
+      await ext.remove("sync", "extraSites");
     }
   });
 

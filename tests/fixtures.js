@@ -611,6 +611,20 @@ async function expectFilteredBy(page, text) {
   }
 }
 
+// The useqbe filter Enter builds for an app with a field table (see
+// src/records.js): filter, then the user's default site (unless a site was
+// typed: site false) and, for apps with a history flag, historyflag=0.
+// E.g. await withDefaults(page, "description=pump", { history: true }).
+async function withDefaults(page, filter, { site = true, history = false } = {}) {
+  // Set by the extension once whoami has answered.
+  await expect(page.locator("html")).toHaveAttribute("data-magic-search-default-site", /.*/, { timeout: 30_000 });
+  const def = (await page.locator("html").getAttribute("data-magic-search-default-site")) || "";
+  let out = filter;
+  if (site && def) out += `|siteid==${def}`;
+  if (history) out += "|historyflag=0";
+  return out;
+}
+
 // Press Enter in the palette and return the URL it navigates to, without
 // loading it: the request is answered with "204 No Content", which leaves the
 // page where it is (so no new Maximo session). Fails if Enter doesn't navigate.
@@ -741,6 +755,7 @@ module.exports = {
   FIXTURE_OPTIONS,
   FIXTURE_SITES,
   readListColumn,
+  withDefaults,
   hasRealFocus,
   SHELL_URL,
   DEFAULT_KEYS,

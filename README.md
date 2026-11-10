@@ -51,9 +51,14 @@ For the common apps, each word goes to its own field, and all of them must match
 | Contains a digit (any case) | the record's number | `1002`, `pmp-04` |
 | Anything else (lowercase) | the description, words in the order typed | `pump seal` |
 
+Two filters are added for you:
+
+- **Your default site** (from `/oslc/whoami`) when you don't type a site. Typing one, e.g. `CARLISLE`, replaces it. Item Master has no site, so it gets none.
+- **`historyflag=0`** on Work Order Tracking, Purchase Orders, Purchase Requisitions and Service Requests, so records that are history (closed or cancelled) are left out. If you type a status (`wo CLOSE`), it isn't added, so you can still find them.
+
 So `wo 1002 pump APPR BEDFORD` opens Work Order Tracking filtered on work order 1002, description containing "pump", status APPR and site BEDFORD. `wo bedford` searches the description, because only capitals are read as a site or status. A word like `HVAC` in capitals is read as a status; type `hvac` to search the description.
 
-The highlighted app shows how the words were read, e.g. **WO: 1002 · Description: pump · Status: APPR · Site: BEDFORD**.
+The highlighted app shows how the words were read, e.g. **WO: 1002 · Description: pump · Status: APPR · Site: BEDFORD**, or **Description: pump · Site: CARLISLE (default)** when the default site is used.
 
 | App | Number field |
 |---|---|
@@ -71,7 +76,7 @@ Their (Oil)-style versions use the same fields. Other apps filter only the descr
 
 **Your sites** are loaded from Maximo with the app list (`/oslc/os/mxapisite`). If your login can't read that, the extension uses your default and insert sites from `/oslc/whoami`. Add any missing sites on the options page under **Environments** (**Extra sites**). A site that isn't known is read as a status, and the label shows it (`Status: LEEDS`).
 
-This uses `&additionalevent=useqbe&additionaleventvalue=wonum=1002|description=pump|status==APPR|siteid==BEDFORD`: one `field=value` pair per field, separated by `|`. Each value is what you'd type in the list's filter row: `=APPR` is an exact match, and `=APPR,=INPRG` means either.
+This uses `&additionalevent=useqbe&additionaleventvalue=wonum=1002|description=pump|status==APPR|siteid==BEDFORD` (and `|historyflag=0` when no status is typed): one `field=value` pair per field, separated by `|`. Each value is what you'd type in the list's filter row: `=APPR` is an exact match, and `=APPR,=INPRG` means either.
 
 ### Insert a new record
 
