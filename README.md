@@ -40,9 +40,38 @@ Each app gets aliases automatically: its app ids (all versions), the initials of
 
 ### Open an app with its list filtered
 
-Type the app (name or alias), a space, then some text: `assets first`, `wo pump`, `work orders pump`, `po 1001`. The app is picked from the longest start of what you typed that matches, and the rest is the filter. The highlighted app shows a **Description: …** label, and Enter opens it with the list filtered on description. Maximo does the matching with the text as typed. If only one record matches, Maximo opens that record directly.
+Type the app (name or alias), a space, then some text: `assets first`, `wo pump`, `work orders pump`, `po 1001`. The app is picked from the longest start of what you typed that matches, and the rest is the filter. Enter opens the app with its list filtered. If only one record matches, Maximo opens that record directly.
 
-This uses `&additionalevent=useqbe&additionaleventvalue=description=<text>` (set in `FILTER` at the top of `src/content.js`).
+For the common apps, each word goes to its own field, and all of them must match:
+
+| Word | Filters | Example |
+|---|---|---|
+| In capitals, and one of your sites | the site (exact) | `BEDFORD` |
+| Any other word in capitals | the status (exact); two or more mean "either" | `APPR`, `WAPPR INPRG` |
+| Contains a digit (any case) | the record's number | `1002`, `pmp-04` |
+| Anything else (lowercase) | the description, words in the order typed | `pump seal` |
+
+So `wo 1002 pump APPR BEDFORD` opens Work Order Tracking filtered on work order 1002, description containing "pump", status APPR and site BEDFORD. `wo bedford` searches the description, because only capitals are read as a site or status. A word like `HVAC` in capitals is read as a status; type `hvac` to search the description.
+
+The highlighted app shows how the words were read, e.g. **WO: 1002 · Description: pump · Status: APPR · Site: BEDFORD**.
+
+| App | Number field |
+|---|---|
+| Work Order Tracking | `wonum` |
+| Assets | `assetnum` |
+| Locations | `location` |
+| Purchase Orders | `ponum` |
+| Purchase Requisitions | `prnum` |
+| Service Requests | `ticketid` |
+| Item Master (no site) | `itemnum` |
+| Preventive Maintenance | `pmnum` |
+| Job Plans | `jpnum` |
+
+Their (Oil)-style versions use the same fields. Other apps filter only the description, with all the text as typed. The fields are in `APP_FIELDS` in `src/records.js`.
+
+**Your sites** are loaded from Maximo with the app list (`/oslc/os/mxapisite`). If your login can't read that, the extension uses your default and insert sites from `/oslc/whoami`. Add any missing sites on the options page under **Environments** (**Extra sites**). A site that isn't known is read as a status, and the label shows it (`Status: LEEDS`).
+
+This uses `&additionalevent=useqbe&additionaleventvalue=wonum=1002|description=pump|status==APPR|siteid==BEDFORD`: one `field=value` pair per field, separated by `|`. Each value is what you'd type in the list's filter row: `=APPR` is an exact match, and `=APPR,=INPRG` means either.
 
 ### Insert a new record
 
@@ -70,9 +99,9 @@ The setting is saved with Chrome sync and applies straight away to open Maximo t
 
 ## Tests
 
-The tests drive Chromium, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering (including aliases), opening apps, opening apps with their list filtered on description, opening apps ready to insert a new record (nothing gets saved), the shortcut inside Maximo's iframe, changing the shortcut on the options page (they put the default back afterwards), loading and refreshing the app list, choosing app versions and editing aliases.
+The tests drive Chromium, with the extension loaded, against a live Maximo instance. They sign in once and then check opening, closing, filtering (including aliases), opening apps, opening apps with their list filtered (on description, number, status and site), opening apps ready to insert a new record (nothing gets saved), the shortcut inside Maximo's iframe, changing the shortcut on the options page (they put the default back afterwards), loading and refreshing the app list, choosing app versions and editing aliases.
 
-Most tests don't depend on what the test user can see: the extension's own requests for the app list are answered with a small list in `tests/data/` (taken from a real Maximo menu), with both standard and (Oil) versions. One test (`tests/app-list.spec.js`) loads the real list from your Maximo.
+Most tests don't depend on what the test user can see: the extension's own requests for the app list are answered with a small list in `tests/data/` (taken from a real Maximo menu), with both standard and (Oil) versions. Its request for your sites gets two test sites, BEDFORD and NEWCASTLE. One test (`tests/app-list.spec.js`) loads the real list from your Maximo.
 
 One-time setup (Node 20.12 or newer):
 
@@ -90,7 +119,7 @@ Run them with:
 npm test
 ```
 
-The whole run uses one Maximo login and one tab. Maximo limits how many sessions a login can have, and every page load can start one, so most tests check the address Enter would open without loading it. A few tests (`tests/real-navigation.spec.js`, run last) really open Maximo pages to prove the app, the new record and the description filter work. If Maximo still reports "maximum number of sessions", wait for old sessions to time out and run again. Each run signs in once. If a test fails, Playwright starts a new browser, which reuses that login (kept in the gitignored `.auth/` folder during the run). When the run ends, the tests sign out with Maximo's own sign-out URL and delete it.
+The whole run uses one Maximo login and one tab. Maximo limits how many sessions a login can have, and every page load can start one, so most tests check the address Enter would open without loading it. A few tests (`tests/real-navigation.spec.js`, run last) really open Maximo pages to prove the app, the new record and the filters work. Two of them read a real work order with Maximo's REST API (`mxapiwodetail`), so the test user needs access to it. If Maximo still reports "maximum number of sessions", wait for old sessions to time out and run again. Each run signs in once. If a test fails, Playwright starts a new browser, which reuses that login (kept in the gitignored `.auth/` folder during the run). When the run ends, the tests sign out with Maximo's own sign-out URL and delete it.
 
 They run headless by default (Chromium's new headless mode, which supports extensions). To watch the browser window instead:
 

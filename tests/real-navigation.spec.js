@@ -6,6 +6,7 @@ const {
   iframeTextField,
   maximoFrame,
   expectFilteredBy,
+  readListColumn,
   waitForMaximoIdle,
   SHELL_URL,
 } = require("./fixtures");
@@ -68,6 +69,58 @@ test.describe("Maximo really opens what Enter asks for", () => {
     const url = await enterAndLoad(page, "assets first", "asset");
     expect(url.searchParams.get("additionaleventvalue")).toBe("description=first");
     await expectFilteredBy(page, "first");
+  });
+
+  // A real work order, read with the test's own REST request (the extension
+  // doesn't use this API): one whose status is letters only and with a site.
+  async function someWorkOrder(page) {
+    const list = await page.evaluate(async () => {
+      const base = location.pathname.replace(/\/oslc\/graphite\/.*$/, "");
+      const res = await fetch(
+        `${base}/oslc/os/mxapiwodetail?lean=1&oslc.select=wonum,status,siteid&oslc.pageSize=50`,
+        { headers: { accept: "application/json" } }
+      );
+      if (!res.ok) throw new Error(`mxapiwodetail: HTTP ${res.status}`);
+      return (await res.json()).member || [];
+    });
+    const wo = list.find((w) => w.wonum && w.siteid && /^[A-Z]+$/.test(w.status || ""));
+    expect(wo, "a work order with a site and a letters-only status").toBeTruthy();
+    test.info().annotations.push({ type: "work order", description: JSON.stringify(wo) });
+    return wo;
+  }
+
+  // Number, status and site together (ANDed by Maximo): finds that work
+  // order, either as a list of matches or opened directly when it's the only
+  // one. The site is added as an extra site, as the test site list is fake.
+  test('"wo <number> <STATUS> <SITE>" + Enter finds that work order', async ({ page, ext }) => {
+    const wo = await someWorkOrder(page);
+    await ext.set("sync", { extraSites: { [SITE]: [wo.siteid] } });
+    try {
+      await expect(page.locator("html")).toHaveAttribute("data-magic-search-sites", new RegExp(`\\b${wo.siteid}\\b`));
+      const url = await enterAndLoad(page, `wo ${wo.wonum} ${wo.status} ${wo.siteid}`, "wotrack");
+      expect(url.searchParams.get("additionaleventvalue")).toBe(
+        `wonum=${wo.wonum}|status==${wo.status}|siteid==${wo.siteid}`
+      );
+      await expectFilteredBy(page, wo.wonum);
+    } finally {
+      await ext.remove("sync", "extraSites");
+    }
+  });
+
+  // A status matches exactly: "=APPR" doesn't also list WAPPR.
+  test('"wo <STATUS>" + Enter lists only that status', async ({ page }) => {
+    const wo = await someWorkOrder(page);
+    const url = await enterAndLoad(page, `wo ${wo.status}`, "wotrack");
+    expect(url.searchParams.get("additionaleventvalue")).toBe(`status==${wo.status}`);
+    let result = null;
+    await expect
+      .poll(async () => (result = await readListColumn(page, `=${wo.status}`)), { timeout: 30_000 })
+      .not.toBeNull();
+    test.info().annotations.push({ type: "status column", description: JSON.stringify(result) });
+    if (result.mode === "list") {
+      expect(result.rows.length, "rows listed").toBeGreaterThan(0);
+      expect(result.rows.filter((r) => r.toUpperCase() !== wo.status)).toEqual([]);
+    }
   });
 
   // From an app, "home" goes back to the Start Center: the palette opened

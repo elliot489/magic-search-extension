@@ -11,8 +11,9 @@
   let appVariants = {}; // { "<origin>": { groupName: appId } } (see MagicSearchApps.variantChoicesFor)
   let aliasEdits = {};
   let lastUsed = null; // { key, entry } of the list from the Maximo page used last
-  let sites = []; // [{ origin, apps }]: each Maximo server's apps, from its saved lists
+  let sites = []; // [{ origin, apps, siteIds }]: each Maximo server's apps and site ids, from its saved lists
   let descriptions = {}; // { "<origin>": "text" }, in sync storage as siteDescriptions
+  let extraSites = {}; // { "<origin>": ["BEDFORD"] }, in sync storage as extraSites (record search)
   let selected = null; // origin of the environment shown below the list
 
   const el = (tag, props = {}, ...children) => {
@@ -40,14 +41,17 @@
   // Each Maximo server's apps: all of its saved lists together (one per user).
   function sitesFrom(local) {
     const byOrigin = new Map();
+    const siteIds = new Map();
     for (const key of Object.keys(local).filter((k) => k.startsWith("apps:")).sort()) {
       const apps = (local[key] && local[key].apps) || [];
       const { server } = parseKey(key);
       if (!byOrigin.has(server)) byOrigin.set(server, new Map());
+      if (!siteIds.has(server)) siteIds.set(server, new Set());
       const seen = byOrigin.get(server);
       for (const app of apps) if (!seen.has(app.id)) seen.set(app.id, app);
+      for (const id of (local[key] && local[key].sites) || []) siteIds.get(server).add(id);
     }
-    return [...byOrigin].map(([origin, apps]) => ({ origin, apps: [...apps.values()] }));
+    return [...byOrigin].map(([origin, apps]) => ({ origin, apps: [...apps.values()], siteIds: [...siteIds.get(origin)] }));
   }
 
   // Choices saved by older versions applied to every site: copy them to each
@@ -68,7 +72,8 @@
 
   async function load() {
     const local = await chrome.storage.local.get(null);
-    const sync = await chrome.storage.sync.get(["appVariants", "appAliases", "siteDescriptions"]);
+    const sync = await chrome.storage.sync.get(["appVariants", "appAliases", "siteDescriptions", "extraSites"]);
+    extraSites = sync.extraSites || {};
     appVariants = sync.appVariants || {};
     aliasEdits = sync.appAliases || {};
     descriptions = sync.siteDescriptions || {};
@@ -152,8 +157,39 @@
     const hadFocus = document.activeElement === input;
     if (!hadFocus) input.value = descriptions[selected] || "";
     const field = el("label", { className: "site-description-field" }, el("span", { textContent: "Description " }), input);
-    sitesEl.replaceChildren(list, field);
+    sitesEl.replaceChildren(list, field, sitesField());
     if (hadFocus) input.focus();
+  }
+
+  // The selected environment's Maximo sites, for record search ("wo pump
+  // BEDFORD"): the ones loaded from Maximo, plus any added here.
+  function sitesField() {
+    const site = selectedSite();
+    let input = sitesEl.querySelector(".extra-sites");
+    if (!input || input.dataset.site !== selected) {
+      input = el("input", { className: "extra-sites", placeholder: "e.g. BEDFORD, NEWCASTLE" });
+      input.dataset.site = selected;
+      input.setAttribute("aria-label", "Extra sites");
+      let timer = null;
+      input.addEventListener("input", () => {
+        const origin = input.dataset.site;
+        const list = input.value.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean);
+        const next = { ...extraSites };
+        if (list.length) next[origin] = [...new Set(list)];
+        else delete next[origin];
+        extraSites = next;
+        clearTimeout(timer);
+        timer = setTimeout(() => chrome.storage.sync.set({ extraSites }), 300);
+      });
+    }
+    if (document.activeElement !== input) input.value = (extraSites[selected] || []).join(", ");
+    const loaded = site && site.siteIds.length ? site.siteIds.join(", ") : "none";
+    return el(
+      "div",
+      { className: "sites-field" },
+      el("p", { className: "hint loaded-sites", textContent: `Sites loaded from Maximo: ${loaded}` }),
+      el("label", { className: "site-description-field" }, el("span", { textContent: "Extra sites " }), input)
+    );
   }
 
 
@@ -301,7 +337,11 @@
       changes.siteDescriptions &&
       JSON.stringify(changes.siteDescriptions.newValue || {}) !== JSON.stringify(descriptions);
     const relevant =
-      (area === "sync" && (changes.appVariants || changes.appAliases || descriptionsChanged)) ||
+      (area === "sync" &&
+        (changes.appVariants ||
+          changes.appAliases ||
+          descriptionsChanged ||
+          (changes.extraSites && JSON.stringify(changes.extraSites.newValue || {}) !== JSON.stringify(extraSites)))) ||
       (area === "local" && Object.keys(changes).some((k) => k.startsWith("apps:") || k === "appsLastUsed"));
     if (relevant) load();
   });

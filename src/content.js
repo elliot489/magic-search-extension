@@ -9,6 +9,7 @@
   // aliases. Ranking is in MagicSearchApps.rankGroups (src/apps.js).
   const Apps = MagicSearchApps;
   const Catalog = MagicSearchCatalog;
+  const Records = MagicSearchRecords;
 
   // Starting the query with one of these words (then a space) opens the app
   // ready to insert a new record, e.g. "new wo" or "create work order".
@@ -18,9 +19,11 @@
   const REFRESH_COMMAND = "refresh";
 
   // Text after the app name filters the app's list: "assets first" opens
-  // Assets with description = "first". Maximo URL parameters used for that:
-  // &additionalevent=useqbe&additionaleventvalue=description=first
-  const FILTER = { event: "useqbe", field: "description" };
+  // Assets with description = "first", and "wo 1002 pump APPR BEDFORD"
+  // filters work order number, description, status and site (see
+  // src/records.js). Maximo URL parameters used for that:
+  // &additionalevent=useqbe&additionaleventvalue=wonum=1002|description=pump|...
+  const FILTER_EVENT = "useqbe";
 
   // Ranked [{ group, alias }]; in insert mode only apps the user can insert into.
   function rankFor(query, insert) {
@@ -57,7 +60,8 @@
   // .../maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=wotrack#/main
   // (the same format Maximo's own side menu uses, minus its one-off _tt token).
   // With insert, adds &additionalevent=insert so Maximo starts a new record.
-  // With a filter, adds &additionalevent=useqbe&additionaleventvalue=description=<text>.
+  // With a filter (the useqbe value from MagicSearchRecords.qbe), adds
+  // &additionalevent=useqbe&additionaleventvalue=<filter>.
   function appUrl(app, { insert = false, filter = "" } = {}) {
     const url = new URL(location.href);
     url.pathname = url.pathname.replace(/manage-shell\/.*$/, "manage-shell/index.html");
@@ -65,8 +69,8 @@
     if (insert) {
       params.additionalevent = "insert";
     } else if (filter) {
-      params.additionalevent = FILTER.event;
-      params.additionaleventvalue = `${FILTER.field}=${filter}`;
+      params.additionalevent = FILTER_EVENT;
+      params.additionaleventvalue = filter;
     }
     url.search = new URLSearchParams(params).toString();
     url.hash = "#/main";
@@ -221,7 +225,10 @@
           li.dataset.app = entry.group.app.id;
           label.textContent = entry.group.label;
           if (entry.alias) label.dataset.alias = entry.alias;
-          if (filter && !entry.group.app.noFilter) li.dataset.filterText = filter;
+          if (filter && !entry.group.app.noFilter) {
+            li.dataset.filterText = filter;
+            li.dataset.filterLabelText = Records.label(filter, entry.group.name, Catalog.sites());
+          }
         }
         li.appendChild(label);
         return li;
@@ -258,14 +265,20 @@
       highlight();
     }
 
-    // Mark the highlighted row (and show the filter badge on it).
+    // Mark the highlighted row (and show the filter badge on it: the text
+    // after the app in data-filter, and how it was read in data-filter-label).
     function highlight() {
       for (const li of list.querySelectorAll(".magic-search-option")) {
         const on = Number(li.dataset.index) === selected;
         li.classList.toggle("is-selected", on);
         li.setAttribute("aria-selected", String(on));
-        if (on && li.dataset.filterText) li.dataset.filter = li.dataset.filterText;
-        else delete li.dataset.filter;
+        if (on && li.dataset.filterText) {
+          li.dataset.filter = li.dataset.filterText;
+          li.dataset.filterLabel = li.dataset.filterLabelText;
+        } else {
+          delete li.dataset.filter;
+          delete li.dataset.filterLabel;
+        }
       }
     }
 
@@ -354,7 +367,8 @@
         MagicSearchActions.run(top.action);
         return;
       }
-      const url = appUrl(top.group.app.id, { insert, filter: top.group.app.noFilter ? "" : filter });
+      const qbe = top.group.app.noFilter || insert ? "" : Records.qbe(filter, top.group.name, Catalog.sites());
+      const url = appUrl(top.group.app.id, { insert, filter: qbe });
       previousFocus = null;
       close();
       // Same address as now (the app is already open): assign() would only
