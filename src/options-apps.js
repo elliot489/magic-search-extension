@@ -3,6 +3,7 @@
 (() => {
   const A = MagicSearchApps;
   const listsEl = document.getElementById("app-lists");
+  const sitesEl = document.getElementById("sites");
   const variantsEl = document.getElementById("variants");
   const aliasesEl = document.getElementById("aliases");
   const searchEl = document.getElementById("alias-search");
@@ -11,6 +12,8 @@
   let aliasEdits = {};
   let lastUsed = null; // { key, entry } of the list from the Maximo page used last
   let sites = []; // [{ origin, apps }]: each Maximo server's apps, from its saved lists
+  let descriptions = {}; // { "<origin>": "text" }, in sync storage as siteDescriptions
+  let selected = null; // origin of the environment shown below the list
 
   const el = (tag, props = {}, ...children) => {
     const node = Object.assign(document.createElement(tag), props);
@@ -23,10 +26,15 @@
     return { server, user };
   }
 
+  function selectedSite() {
+    return sites.find((s) => s.origin === selected) || null;
+  }
+
+  // App groups of the selected environment, for the aliases section.
   function groups() {
-    if (!lastUsed) return [];
-    const origin = parseKey(lastUsed.key).server;
-    return A.buildGroups(lastUsed.entry.apps, A.variantChoicesFor(appVariants, origin), aliasEdits);
+    const site = selectedSite();
+    if (!site) return [];
+    return A.buildGroups(site.apps, A.variantChoicesFor(appVariants, site.origin), aliasEdits);
   }
 
   // Each Maximo server's apps: all of its saved lists together (one per user).
@@ -60,17 +68,94 @@
 
   async function load() {
     const local = await chrome.storage.local.get(null);
-    const sync = await chrome.storage.sync.get(["appVariants", "appAliases"]);
+    const sync = await chrome.storage.sync.get(["appVariants", "appAliases", "siteDescriptions"]);
     appVariants = sync.appVariants || {};
     aliasEdits = sync.appAliases || {};
+    descriptions = sync.siteDescriptions || {};
     const key = local.appsLastUsed;
     lastUsed = key && local[key] && Array.isArray(local[key].apps) ? { key, entry: local[key] } : null;
     sites = sitesFrom(local);
+    // Keep the environment that was picked; at first, the one used last.
+    if (!sites.some((s) => s.origin === selected)) {
+      const last = lastUsed && parseKey(lastUsed.key).server;
+      selected = sites.some((s) => s.origin === last) ? last : sites[0]?.origin ?? null;
+    }
     await migrateSharedChoices();
     renderLists(local);
+    renderSites();
     renderVariants();
     renderAliases();
   }
+
+  function select(origin) {
+    if (origin === selected) return;
+    selected = origin;
+    renderSites();
+    renderVariants();
+    renderAliases();
+  }
+
+  // ---- Environments ----
+  // One entry per Maximo server with a saved list; picking one shows its
+  // description, versions and aliases below.
+  function renderSites() {
+    if (!sites.length) {
+      sitesEl.replaceChildren(el("p", { className: "empty", textContent: "Open Maximo first to load your apps." }));
+      return;
+    }
+    const items = sites.map((site) => {
+      const item = el(
+        "button",
+        { type: "button", className: "site-item" },
+        el("span", { className: "site-origin", textContent: site.origin }),
+        el("span", { className: "site-item-description", textContent: descriptions[site.origin] || "" })
+      );
+      item.dataset.site = site.origin;
+      item.setAttribute("role", "tab");
+      item.setAttribute("aria-selected", String(site.origin === selected));
+      item.addEventListener("click", () => select(site.origin));
+      return item;
+    });
+    const list = el("div", { className: "site-list" }, ...items);
+    list.setAttribute("role", "tablist");
+    list.setAttribute("aria-label", "Environments");
+    list.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      const i = sites.findIndex((s) => s.origin === selected) + (e.key === "ArrowDown" ? 1 : -1);
+      if (i < 0 || i >= sites.length) return;
+      select(sites[i].origin);
+      sitesEl.querySelector(`.site-item[aria-selected="true"]`)?.focus();
+    });
+
+    // The selected environment's description. Keep the field (and the cursor
+    // in it) when only the list changes.
+    let input = sitesEl.querySelector(".site-description");
+    if (!input || input.dataset.site !== selected) {
+      input = el("input", { className: "site-description", placeholder: "e.g. Production, Test, Client A", maxLength: 200 });
+      input.dataset.site = selected;
+      input.setAttribute("aria-label", "Description");
+      let timer = null;
+      input.addEventListener("input", () => {
+        const origin = input.dataset.site;
+        const text = input.value.trim();
+        const next = { ...descriptions };
+        if (text) next[origin] = text;
+        else delete next[origin];
+        descriptions = next;
+        const label = sitesEl.querySelector(`.site-item[data-site="${CSS.escape(origin)}"] .site-item-description`);
+        if (label) label.textContent = text;
+        clearTimeout(timer);
+        timer = setTimeout(() => chrome.storage.sync.set({ siteDescriptions: descriptions }), 300);
+      });
+    }
+    const hadFocus = document.activeElement === input;
+    if (!hadFocus) input.value = descriptions[selected] || "";
+    const field = el("label", { className: "site-description-field" }, el("span", { textContent: "Description " }), input);
+    sitesEl.replaceChildren(list, field);
+    if (hadFocus) input.focus();
+  }
+
 
   // ---- Saved app lists ----
   function renderLists(local) {
@@ -109,25 +194,25 @@
   }
 
   // ---- Versions ----
-  // One section per Maximo server, listing only the versions that server has.
+  // The selected environment's apps with more than one version: only the
+  // versions that server has.
   function renderVariants() {
-    if (!sites.length) {
+    const site = selectedSite();
+    if (!site) {
       variantsEl.replaceChildren(el("p", { className: "empty", textContent: "Open Maximo first to load your apps." }));
       return;
     }
-    const sections = sites.map((site, s) => {
-      const choices = A.variantChoicesFor(appVariants, site.origin);
-      const multi = A.buildGroups(site.apps, choices).filter((g) => g.versions.length > 1);
-      const section = el("div", { className: "variant-site" }, el("h3", { textContent: site.origin }));
-      section.dataset.site = site.origin;
-      if (!multi.length) {
-        section.append(el("p", { className: "empty", textContent: "None: each app has one version on this server." }));
-        return section;
-      }
+    const choices = A.variantChoicesFor(appVariants, site.origin);
+    const multi = A.buildGroups(site.apps, choices).filter((g) => g.versions.length > 1);
+    const section = el("div", { className: "variant-site" });
+    section.dataset.site = site.origin;
+    if (!multi.length) {
+      section.append(el("p", { className: "empty", textContent: "None: each app has one version on this server." }));
+    } else {
       const rows = multi.map((g, i) => {
         const cell = el("td", { className: "variant-choices" });
         for (const v of g.versions) {
-          const radio = el("input", { type: "radio", name: `variant-${s}-${i}`, value: v.id, checked: v.id === g.app.id });
+          const radio = el("input", { type: "radio", name: `variant-${i}`, value: v.id, checked: v.id === g.app.id });
           radio.addEventListener("change", () => {
             const own = typeof appVariants[site.origin] === "object" ? appVariants[site.origin] : {};
             appVariants = { ...appVariants, [site.origin]: { ...own, [g.name]: v.id } };
@@ -141,9 +226,8 @@
         return tr;
       });
       section.append(el("table", {}, ...rows));
-      return section;
-    });
-    variantsEl.replaceChildren(...sections);
+    }
+    variantsEl.replaceChildren(section);
   }
 
   // ---- Aliases ----
@@ -212,8 +296,12 @@
   searchEl.addEventListener("input", filterAliases);
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    // A description typed here is already shown; another tab's is picked up.
+    const descriptionsChanged =
+      changes.siteDescriptions &&
+      JSON.stringify(changes.siteDescriptions.newValue || {}) !== JSON.stringify(descriptions);
     const relevant =
-      (area === "sync" && (changes.appVariants || changes.appAliases)) ||
+      (area === "sync" && (changes.appVariants || changes.appAliases || descriptionsChanged)) ||
       (area === "local" && Object.keys(changes).some((k) => k.startsWith("apps:") || k === "appsLastUsed"));
     if (relevant) load();
   });

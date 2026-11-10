@@ -27,6 +27,16 @@
     .alias-edited { font-size: 12px; color: #4a8cff; }
     .alias-shared { font-size: 12px; color: #888; }
     .empty { color: #888; }
+    .site-list { display: flex; flex-direction: column; border: 1px solid #8884; border-radius: 8px; overflow: hidden; }
+    .site-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: 0; border-radius: 0; border-bottom: 1px solid #8883; background: transparent; padding: 8px 12px; }
+    .site-item:last-child { border-bottom: 0; }
+    .site-item:hover { background: #8881; }
+    .site-item[aria-selected="true"] { background: #4a8cff22; box-shadow: inset 3px 0 0 #4a8cff; }
+    .site-origin { font-weight: 600; overflow-wrap: anywhere; }
+    .site-item-description { font-size: 13px; color: #888; }
+    .site-item-description:empty { display: none; }
+    .site-description-field { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; }
+    input.site-description { font: inherit; padding: 4px 8px; border: 1px solid #8886; border-radius: 6px; background: transparent; flex: 1; min-width: 0; }
   </style>
 </head>
 <body>
@@ -45,12 +55,16 @@
   <p class="hint">Your Maximo apps are loaded from Maximo when you open it, and again once a day. Type "refresh" in the search box to reload now. Clear removes a list; it's loaded again the next time you open that Maximo.</p>
   <div id="app-lists"></div>
 
-  <h2>Apps with more than one version</h2>
-  <p class="hint">Apps such as Work Order Tracking and Work Order Tracking (Oil). Each Maximo server has its own choice and lists only the versions it has. The search box shows only the version chosen here, and its aliases open it.</p>
+  <h2>Environments</h2>
+  <p class="hint">Each Maximo server you've used. Pick one to see its apps below, and give it a description to tell them apart.</p>
+  <div id="sites"></div>
+
+  <h3>Apps with more than one version</h3>
+  <p class="hint">Apps such as Work Order Tracking and Work Order Tracking (Oil), on the environment picked above. Each environment has its own choice and lists only the versions it has. The search box shows only the version chosen here, and its aliases open it.</p>
   <div id="variants"></div>
 
-  <h2>Aliases</h2>
-  <p class="hint">Short names that open an app, e.g. "wo". Generated from each app's name and id; edit them as a comma-separated list. Reset puts the generated ones back.</p>
+  <h3>Aliases</h3>
+  <p class="hint">Short names that open an app, e.g. "wo", listed for the environment picked above (they apply on every environment). Generated from each app's name and id; edit them as a comma-separated list. Reset puts the generated ones back.</p>
   <div class="row"><input id="alias-search" type="search" placeholder="Find an app…" aria-label="Find an app"></div>
   <div id="aliases"></div>
 

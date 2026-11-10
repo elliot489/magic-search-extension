@@ -30,7 +30,7 @@ Open the search box while you're in an app (e.g. Work Order Tracking) and it sho
 
 ### One entry per app
 
-Some apps come in more than one version, such as Work Order Tracking and Work Order Tracking (Oil): the same name with a suffix in brackets. The search box lists only one of them. If you can open only one version, that one is used. If you can open several, the (Oil)-style version is used unless you choose another on the options page, under **Apps with more than one version**. The choice is made per Maximo server: each server you've used gets its own section, listing only the versions that server has. For example, "Work Order Tracking (Well-Safe)" appears only for the server that has it.
+Some apps come in more than one version, such as Work Order Tracking and Work Order Tracking (Oil): the same name with a suffix in brackets. The search box lists only one of them. If you can open only one version, that one is used. If you can open several, the (Oil)-style version is used unless you choose another on the options page, under **Apps with more than one version**. The choice is made per Maximo server. The options page lists each server you've used under **Environments**; pick one to see its versions and aliases, and give it a description (e.g. "Production") to tell them apart. Each server lists only the versions it has. For example, "Work Order Tracking (Well-Safe)" appears only for the server that has it.
 
 ### Aliases
 
