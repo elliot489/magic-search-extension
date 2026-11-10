@@ -19,7 +19,8 @@ const {
 const FIXTURE_APPS = Apps.appsFromModules(FIXTURE_MODULES); // RUN apps only
 const FIXTURE_GROUPS = Apps.buildGroups(Apps.withInsertFlags(FIXTURE_APPS, FIXTURE_OPTIONS)).length;
 const SAVED = `saved:${FIXTURE_GROUPS}`;
-const BUILTIN = ["Locations", "Assets", "Work Order Tracking", "Purchase Orders"];
+// The built-in apps, then the Start Center (always offered).
+const BUILTIN = ["Locations", "Assets", "Work Order Tracking", "Purchase Orders", "Start Center"];
 
 async function savedEntry(ext) {
   const lists = await ext.savedLists();
@@ -108,7 +109,7 @@ test.describe("app list from Maximo", () => {
     await expect(options.page.locator("#app-lists")).toContainText("No app lists saved yet");
     expect(await ext.savedLists()).toEqual({});
     // The open Maximo page drops back to the built-in apps straight away...
-    await expect.poll(() => appListState(page)).toBe("builtin:4");
+    await expect.poll(() => appListState(page)).toBe("builtin:5");
     // ...and the next page load fetches the list again.
     page = await maximo.reloadShell();
     await expect.poll(() => appListState(page), { timeout: 30_000 }).toBe(SAVED);
@@ -123,7 +124,7 @@ test.describe("app list from Maximo", () => {
       await expect
         .poll(() => page.locator("html").getAttribute("data-magic-search-apps-error"), { timeout: 30_000 })
         .toContain("HTTP 500");
-      expect(await appListState(page)).toBe("builtin:4");
+      expect(await appListState(page)).toBe("builtin:5");
       expect(await ext.savedLists()).toEqual({});
       await openPalette(page);
       await expect(palette(page).options).toHaveText(BUILTIN);

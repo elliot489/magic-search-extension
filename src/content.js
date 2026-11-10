@@ -221,7 +221,7 @@
           li.dataset.app = entry.group.app.id;
           label.textContent = entry.group.label;
           if (entry.alias) label.dataset.alias = entry.alias;
-          if (filter) li.dataset.filterText = filter;
+          if (filter && !entry.group.app.noFilter) li.dataset.filterText = filter;
         }
         li.appendChild(label);
         return li;
@@ -354,7 +354,7 @@
         MagicSearchActions.run(top.action);
         return;
       }
-      const url = appUrl(top.group.app.id, { insert, filter });
+      const url = appUrl(top.group.app.id, { insert, filter: top.group.app.noFilter ? "" : filter });
       previousFocus = null;
       close();
       // Same address as now (the app is already open): assign() would only

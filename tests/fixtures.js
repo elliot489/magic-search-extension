@@ -590,7 +590,7 @@ async function enterTarget(page) {
   }
 }
 
-// The extension's app list state on the page, e.g. "saved:20" or "builtin:4"
+// The extension's app list state on the page, e.g. "saved:20" or "builtin:5"
 // (set by src/catalog.js on <html data-magic-search-apps>).
 function appListState(page) {
   return page.locator("html").getAttribute("data-magic-search-apps");

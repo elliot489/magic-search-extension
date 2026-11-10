@@ -172,6 +172,10 @@ test.describe("opening apps", () => {
     ["PO", "plusgpo"],
     ["pr", "plusgpr"],
     ["ci types", "citype"],
+    // The Start Center isn't in Maximo's app list; it's always offered.
+    ["sc", "startcntr"],
+    ["home", "startcntr"],
+    ["start center", "startcntr"],
   ];
 
   for (const [query, app] of apps) {
@@ -297,6 +301,17 @@ test.describe("filtering an app's list", () => {
       expect(url.searchParams.get("additionaleventvalue")).toBe(`description=${filter}`);
     });
   }
+
+  test("the Start Center takes no filter", async ({ page }) => {
+    await openPalette(page);
+    await palette(page).input.pressSequentially("home pump");
+    await expect(selected(page)).toHaveText(["Start Center"]);
+    await expect(selected(page)).not.toHaveAttribute("data-filter");
+    const target = await enterTarget(page);
+    expect(target.searchParams.get("value")).toBe("startcntr");
+    expect(target.searchParams.get("additionalevent")).toBeNull();
+    expect(target.searchParams.get("additionaleventvalue")).toBeNull();
+  });
 
   test("new + app + text opens a new record and ignores the text", async ({ page }) => {
     await openPalette(page);

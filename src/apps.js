@@ -11,6 +11,17 @@ var MagicSearchApps = (() => {
     { id: "PO", label: "Purchase Orders", module: "Purchasing", canInsert: true },
   ];
 
+  // Always offered, after the user's apps: back to the Start Center. It isn't
+  // in Maximo's app list. Opens with event=loadapp&value=startcntr, and takes
+  // no filter.
+  const START_CENTER = { id: "STARTCNTR", label: "Start Center", module: "", canInsert: false, noFilter: true };
+
+  // Aliases that rank like an app id: an exact match wins over other apps'
+  // initials. Keyed by group name; generated (editable like the rest).
+  const FIXED_ALIASES = {
+    "start center": ["sc", "home"],
+  };
+
   // Aliases the initials rule can't produce, keyed by group name. They count as
   // generated aliases (editable like the rest).
   const EXTRA_ALIASES = {
@@ -70,7 +81,7 @@ var MagicSearchApps = (() => {
 
   // Generated aliases for a group, each with its kind:
   // "id" (an app id), "full" (initials of every word), "two" (first two
-  // words), "extra" (EXTRA_ALIASES).
+  // words), "extra" (EXTRA_ALIASES); FIXED_ALIASES count as "id".
   function generatedAliases(name, versions) {
     const out = [];
     const add = (alias, kind) => {
@@ -78,6 +89,7 @@ var MagicSearchApps = (() => {
       if (alias && !out.some((a) => a.alias === alias)) out.push({ alias, kind });
     };
     for (const v of versions) add(v.id, "id");
+    for (const fixed of FIXED_ALIASES[name] || []) add(fixed, "id");
     const words = baseLabel(versions[0].label)
       .split(/[\s/-]+/)
       .filter((w) => w && !SMALL_WORDS.has(w.toLowerCase()) && /[a-z0-9]/i.test(w));
@@ -118,9 +130,11 @@ var MagicSearchApps = (() => {
   // Groups in menu order: { name, label, app (chosen version), versions,
   // aliases: [{ alias, kind }], edited }.
   // variantChoices: { groupName: appId }; aliasEdits: { groupName: [alias] }.
+  // The Start Center is added at the end unless the list already has it.
   function buildGroups(apps, variantChoices = {}, aliasEdits = {}) {
     const byName = new Map();
-    for (const app of apps) {
+    const all = apps.some((a) => a.id === START_CENTER.id) ? apps : [...apps, START_CENTER];
+    for (const app of all) {
       const name = groupName(app.label);
       if (!byName.has(name)) byName.set(name, []);
       byName.get(name).push(app);
@@ -191,6 +205,7 @@ var MagicSearchApps = (() => {
 
   return {
     BUILTIN_APPS,
+    START_CENTER,
     EXTRA_ALIASES,
     SHOW_TOP,
     baseLabel,

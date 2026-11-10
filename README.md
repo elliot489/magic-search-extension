@@ -34,6 +34,8 @@ Some apps come in more than one version, such as Work Order Tracking and Work Or
 
 ### Aliases
 
+The search box also offers **Start Center**, with aliases `sc` and `home`, to go back to your start page from any app.
+
 Each app gets aliases automatically: its app ids (all versions), the initials of its name (`wot` for Work Order Tracking) and of its first two words (`wo`). An alias opens whichever version of the app is chosen. Edit them on the options page under **Aliases** (comma-separated); **Reset** puts the generated ones back. Edited aliases rank above generated ones when several apps share an alias.
 
 ### Open an app with its list filtered
