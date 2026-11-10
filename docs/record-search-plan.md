@@ -8,7 +8,8 @@ From the palette, find a record by any mix of:
 
 - its **identifier**, the key users see (`WONUM`, `ASSETNUM`, `LOCATION`, `PONUM`...), not the hidden numeric id (`WORKORDERID`);
 - its **description**, with words in any order;
-- its **site**.
+- its **site**;
+- its **status**.
 
 Matches show up in the palette as you type, and Enter opens the record.
 
@@ -18,7 +19,9 @@ Examples, all in Work Order Tracking:
 |---|---|
 | `wo 1002` | WONUM 1002 first, then 10020, 11002... |
 | `wo pump seal` | Work orders whose description has both "pump" and "seal" |
-| `wo pump bedford` | The same, only at site BEDFORD |
+| `wo pump BEDFORD` | The same, only at site BEDFORD |
+| `wo pump APPR INPRG` | The same, only with status APPR or INPRG |
+| `wo bedford` | Description contains "bedford" (lowercase is never a site) |
 | `wo 10 pump` | WONUM containing 10 and description containing pump |
 
 ## What we have today
@@ -34,7 +37,7 @@ The palette queries Maximo's REST API with the user's own login, the same way `s
 ```
 /maximo/oslc/os/mxapiwodetail?lean=1
   &oslc.select=wonum,description,siteid,status,workorderid
-  &oslc.where=wonum="%1002%" and siteid="BEDFORD"
+  &oslc.where=wonum="%1002%" and siteid="BEDFORD" and status in ["APPR","INPRG"]
   &oslc.orderBy=-changedate
   &oslc.pageSize=10
 ```
@@ -47,15 +50,23 @@ A local copy (download every work order and search it in the browser) would allo
 
 ### 2. Work out what each word means
 
-The text after the app is split into words, and each word is sorted:
+The text after the app is split into words. **Capitals decide what a word can be**: only a word typed in capitals can be a site, a status or a letters-only identifier. Lowercase words are always description words. So `wo pump APPR BEDFORD` means "description has pump, status APPR, site BEDFORD", while `wo bedford pump` searches the description for both words.
 
-1. **Site.** A word equal to a site id the user can see (`BEDFORD`, any case) becomes the site filter. The site list is fetched once per server and user and saved like the app list (`/oslc/os/mxapisite?oslc.select=siteid,description`). `@bedford` forces a word to be read as a site, in case a site id is also a common word.
-2. **Identifier.** A word containing a digit (`1002`, `PMP-04`, `T1`) is treated as part of the identifier.
-3. **Description.** Everything else is a description word.
+Each word is sorted in this order:
 
-Each identifier and description word must match (AND), in any order. That's what makes it feel fuzzy: `seal pump` finds "Replace pump seal".
+1. **Site.** A capitalised word equal to a site id the user can see (`BEDFORD`). The site list is fetched once per server and user and saved like the app list (`/oslc/os/mxapisite?oslc.select=siteid,description`).
+2. **Status.** A capitalised word equal to one of the app's status values (`WAPPR`, `APPR`, `INPRG`, `COMP`, `CLOSE`...). The values come from the app's status domain (`WOSTATUS` for work orders, `LOCASSETSTATUS` for assets, `POSTATUS` for POs...), including the site's own synonyms, fetched once and saved like the site list. Several statuses mean any of them: `wo pump WAPPR APPR` finds both.
+3. **Identifier.** A word containing a digit (`1002`, `pmp-04`, any case), or any other capitalised word (`BOILER`, a location). Identifiers are stored in capitals in Maximo, so capitals are a natural signal.
+4. **Description.** Everything else.
 
-A word that is only letters could also be an identifier (e.g. location `BOILER`). To cover that, when there are no digit words, two queries run side by side, one with the words on the identifier and one on the description, and the results are merged.
+Each identifier and description word must match (AND), in any order. That's what makes it feel fuzzy: `seal pump` finds "Replace pump seal". The query itself still matches case-insensitively; capitals only decide how a word is read.
+
+Edge cases:
+
+- A capitalised word that is both a site and a status (unlikely): site wins, and the row shows how each word was read so it's visible.
+- A capitalised acronym meant for the description (`HVAC`, `PPM`) would be read as an identifier. To cover that, a capitalised letters-only word that isn't a site or status is tried both as identifier and as description, in two queries side by side, and the results are merged.
+- The highlighted row shows chips for what was understood, e.g. `Site: BEDFORD · Status: APPR · Description: pump`, so a misread is obvious.
+- Typing in all lowercase never applies a site or status filter, so caps lock or a phone keyboard is the only way to trip over it.
 
 ### 3. Rank the results
 
@@ -127,6 +138,7 @@ The instance is on Elliot's LAN, so these can only be checked from his Mac. Step
 3. `uniqueid=` opens a record in the Manage shell.
 4. `useqbe` accepts several fields separated by `|`.
 5. REST calls don't use up UI sessions.
+6. Status values can be read per domain, e.g. `/oslc/os/mxapisynonymdomain?oslc.where=domainid="WOSTATUS"`, and `status in [...]` works in `oslc.where`.
 
 ## Tests
 
@@ -134,7 +146,8 @@ Following the project rules (live Maximo, one login and tab, most Enter targets 
 
 - `wo <known wonum>` lists that work order first; Enter's address contains its unique id.
 - `wo <two description words in reverse order>` finds a known record.
-- `wo <word> <siteid>` returns only that site.
+- `wo <word> <SITEID>` returns only that site; the same word in lowercase searches the description.
+- `wo <word> <STATUS>` returns only that status; two statuses return either.
 - Typing fast sends one request for the final text (check the network log).
 - A failing REST call (routed to 500) leaves the app row working.
 - One test in `real-navigation.spec.js` really opens a found record.
@@ -147,6 +160,6 @@ Test records are looked up at the start of the run (the first work order the tes
    - Option 1: automatic. `wo pump` shows the app row first (Enter opens the filtered list, as today) and records below it.
    - Option 2: automatic, records first. Enter opens the top record.
    - Option 3: explicit. Tab on an app turns it into a tag (like the in-app actions tag), and then typing searches only its records.
-2. **Site.** Auto-detect site ids in the text plus `@site`, or only `@site`? Should the user's default site be preferred when no site is typed?
+2. **Status values.** Match the stored status (e.g. `APPR`) only, or also its description ("Approved")? The plan matches only the code.
 3. **Apps.** Is the table above the right starting list?
 4. **Later:** a search with no app (`1002` alone searching work orders, assets and locations at once)?
