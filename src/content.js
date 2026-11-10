@@ -227,7 +227,7 @@
           if (entry.alias) label.dataset.alias = entry.alias;
           if (filter && !entry.group.app.noFilter) {
             li.dataset.filterText = filter;
-            li.dataset.filterLabelText = Records.label(filter, entry.group.name, Catalog.sites());
+            li.dataset.filterLabelText = Records.label(filter, entry.group.name, Catalog.sites(), Catalog.defaultSite());
           }
         }
         li.appendChild(label);
@@ -367,7 +367,7 @@
         MagicSearchActions.run(top.action);
         return;
       }
-      const qbe = top.group.app.noFilter || insert ? "" : Records.qbe(filter, top.group.name, Catalog.sites());
+      const qbe = top.group.app.noFilter || insert ? "" : Records.qbe(filter, top.group.name, Catalog.sites(), Catalog.defaultSite());
       const url = appUrl(top.group.app.id, { insert, filter: qbe });
       previousFocus = null;
       close();

@@ -1,4 +1,14 @@
-const { test, expect, palette, openPalette, enterTarget, gotoApp, DEFAULT_KEYS, SHELL_URL } = require("./fixtures");
+const {
+  test,
+  expect,
+  palette,
+  openPalette,
+  enterTarget,
+  gotoApp,
+  withDefaults,
+  DEFAULT_KEYS,
+  SHELL_URL,
+} = require("./fixtures");
 
 const SITE = new URL(SHELL_URL).origin;
 
@@ -280,16 +290,18 @@ test.describe("filtering an app's list", () => {
     await expect(selected(page)).not.toHaveAttribute("data-filter");
   });
 
-  // A number goes to the app's identifier field (see tests/record-search.spec.js).
+  // A number goes to the app's identifier field, and the user's default site
+  // and historyflag=0 are added (see tests/field-filters.spec.js).
+  const HISTORY = { history: true };
   const opened = [
-    ["assets first", "plusgass", "description=first"],
-    ["wo pump", "plusgwo", "description=pump"],
-    ["work orders pump", "plusgwo", "description=pump"],
-    ["po 1001", "plusgpo", "ponum=1001"],
-    ["loc office", "plusgloc", "description=office"],
+    ["assets first", "plusgass", "description=first", {}],
+    ["wo pump", "plusgwo", "description=pump", HISTORY],
+    ["work orders pump", "plusgwo", "description=pump", HISTORY],
+    ["po 1001", "plusgpo", "ponum=1001", HISTORY],
+    ["loc office", "plusgloc", "description=office", {}],
   ];
 
-  for (const [query, app, filter] of opened) {
+  for (const [query, app, filter, defaults] of opened) {
     test(`"${query}" + Enter goes to ${app} filtered on ${filter}`, async ({ page }) => {
       await openPalette(page);
       await palette(page).input.pressSequentially(query);
@@ -299,7 +311,7 @@ test.describe("filtering an app's list", () => {
       expect(url.searchParams.get("event")).toBe("loadapp");
       expect(url.searchParams.get("value")).toBe(app);
       expect(url.searchParams.get("additionalevent")).toBe("useqbe");
-      expect(url.searchParams.get("additionaleventvalue")).toBe(filter);
+      expect(url.searchParams.get("additionaleventvalue")).toBe(await withDefaults(page, filter, defaults));
     });
   }
 

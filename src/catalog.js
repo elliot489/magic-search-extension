@@ -18,6 +18,8 @@ var MagicSearchCatalog = (() => {
   let aliasEdits = {};
   let savedSites = [];
   let extraSites = [];
+  // The user's default site (whoami), used by record search when no site is typed.
+  let defaultSite = "";
   let groups = A.buildGroups(apps);
   let key = null;
   const listeners = [];
@@ -28,6 +30,8 @@ var MagicSearchCatalog = (() => {
     document.documentElement?.setAttribute("data-magic-search-apps", `${source}:${groups.length}`);
     // And the sites record search knows, e.g. "BEDFORD NEWCASTLE".
     document.documentElement?.setAttribute("data-magic-search-sites", sites().join(" "));
+    // Set once whoami has answered ("" if the user has no default site).
+    if (key) document.documentElement?.setAttribute("data-magic-search-default-site", defaultSite);
     for (const fn of listeners) fn();
   }
 
@@ -55,8 +59,18 @@ var MagicSearchCatalog = (() => {
     const who = await getJson("/oslc/whoami?lean=1");
     const user = String(who.loginID || who.userName || who.personid || who.personId || "").toUpperCase();
     if (!user) throw new Error("whoami: no user id");
+    defaultSite = defaultSiteOf(who);
     key = `apps:${location.origin}|${user}`;
+    rebuild();
     return key;
+  }
+
+  // The default site from a whoami answer ("defaultSite", or "defsite" on
+  // some versions), e.g. "BEDFORD"; "" if the user has none.
+  function defaultSiteOf(who) {
+    const k = Object.keys(who || {}).find((name) => /^def(ault)?site$/i.test(name));
+    const v = k && who[k];
+    return typeof v === "string" ? v.trim().toUpperCase() : "";
   }
 
   // The user's site ids, e.g. ["BEDFORD", "NEWCASTLE"], and where they came
@@ -156,6 +170,7 @@ var MagicSearchCatalog = (() => {
   return {
     groups: () => groups,
     sites,
+    defaultSite: () => defaultSite,
     onUpdate: (fn) => listeners.push(fn),
     refresh,
     ready,
