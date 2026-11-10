@@ -36,7 +36,7 @@
     .site-item-description { font-size: 13px; color: #888; }
     .site-item-description:empty { display: none; }
     .site-description-field { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; }
-    input.site-description { font: inherit; padding: 4px 8px; border: 1px solid #8886; border-radius: 6px; background: transparent; flex: 1; min-width: 0; }
+    input.site-description, input.extra-sites { font: inherit; padding: 4px 8px; border: 1px solid #8886; border-radius: 6px; background: transparent; flex: 1; min-width: 0; }
   </style>
 </head>
 <body>
@@ -56,7 +56,7 @@
   <div id="app-lists"></div>
 
   <h2>Environments</h2>
-  <p class="hint">Each Maximo server you've used. Pick one to see its apps below, and give it a description to tell them apart.</p>
+  <p class="hint">Each Maximo server you've used. Pick one to see its apps below, and give it a description to tell them apart. Its sites are used by record search: a word in capitals that is one of them filters the site (e.g. "wo pump BEDFORD"), any other word in capitals filters the status. Sites are loaded from Maximo; add any that are missing as a comma-separated list.</p>
   <div id="sites"></div>
 
   <h3>Apps with more than one version</h3>

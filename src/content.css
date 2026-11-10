@@ -72,9 +72,10 @@
   color: #ffffff;
 }
 
-/* Text after the app name: Enter opens the list filtered on description. */
+/* Text after the app name: Enter opens the list filtered, e.g.
+   "WO: 1002 · Description: pump · Status: APPR · Site: BEDFORD". */
 .magic-search-option.is-selected[data-filter]::after {
-  content: "Description: " attr(data-filter);
+  content: attr(data-filter-label);
   float: right;
   max-width: 60%;
   overflow: hidden;

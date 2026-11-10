@@ -65,6 +65,8 @@ function withTimeout(promise, ms, what) {
 // apps the user can't insert into.
 const FIXTURE_MODULES = require("./data/permission-modules.json");
 const FIXTURE_OPTIONS = require("./data/allowed-app-options.json");
+// The sites the tests use by default (see MaximoSession.routeSites).
+const FIXTURE_SITES = ["BEDFORD", "NEWCASTLE"];
 
 // Every test shares one browser, one Maximo login and one Maximo tab, loaded
 // once. Maximo limits how many UI sessions a login may have and every page
@@ -115,6 +117,7 @@ class MaximoSession {
       );
     });
     await this.routeAppList();
+    await this.routeSites();
     const saved = sessionFile.load();
     if (saved?.cookies?.length) await this.context.addCookies(saved.cookies).catch(() => {});
 
@@ -198,6 +201,26 @@ class MaximoSession {
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
       }
     );
+  }
+
+  // The extension's request for the user's sites (mxapisite, marked with the
+  // x-magic-search header) gets:
+  //  "fixture" (default): FIXTURE_SITES;
+  //  "real":   Maximo's actual answer;
+  //  "fail":   HTTP 403, as when the object structure is blocked (the
+  //            extension then reads the default site from whoami).
+  async routeSites() {
+    this.sitesMode = "fixture";
+    this.sitesRequests = 0;
+    await this.context.route("**/oslc/os/mxapisite**", async (route) => {
+      const req = route.request();
+      if (!req.headers()["x-magic-search"]) return route.continue();
+      this.sitesRequests++;
+      if (this.sitesMode === "real") return route.continue();
+      if (this.sitesMode === "fail") return route.fulfill({ status: 403, body: "test: mxapisite blocked" });
+      const body = { member: FIXTURE_SITES.map((siteid) => ({ siteid })) };
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    });
   }
 
   // A new tab for the tests to share (same browser, same login).
@@ -526,6 +549,37 @@ function readFilterResult(page, text) {
     .catch(() => null);
 }
 
+// In a list view, the cells of the column whose filter field holds value
+// (case-insensitive), e.g. the status column filtered on "=APPR". Returns
+// { mode: "list", rows: [cell texts] }, { mode: "record" } when Maximo opened
+// a single record instead (no list filter fields), or null while loading.
+function readListColumn(page, value) {
+  return maximoFrame(page)
+    .locator("body")
+    .evaluate((body, value) => {
+      const doc = body.ownerDocument;
+      const inputs = [...doc.querySelectorAll("input, textarea")];
+      const filters = inputs.filter((el) => /_tfrow_\[C:\d+\]/.test(el.id));
+      const filter = filters.find((el) => el.value.trim().toLowerCase() === value.toLowerCase());
+      if (!filter) {
+        // A record page has no list filter fields at all.
+        return !filters.length && doc.readyState === "complete" && inputs.some((el) => el.offsetParent !== null)
+          ? { mode: "record" }
+          : null;
+      }
+      const [, prefix, col] = filter.id.match(/^(.*?)_tfrow_\[C:(\d+)\]/);
+      const cells = [...doc.querySelectorAll(`[id^="${prefix}_tdrow_[C:${col}]-c[R:"]`)];
+      const rows = cells
+        .map((c) => {
+          const inner = c.querySelector("input, textarea");
+          return (inner ? inner.value : c.textContent).trim();
+        })
+        .filter(Boolean);
+      return { mode: "list", rows };
+    }, value)
+    .catch(() => null);
+}
+
 // After opening an app with a description filter, check Maximo applied it:
 // either the list's description filter holds the text and every row's
 // description contains it, or (one match) the record opened directly with a
@@ -685,6 +739,8 @@ module.exports = {
   blockMaximoActions,
   FIXTURE_MODULES,
   FIXTURE_OPTIONS,
+  FIXTURE_SITES,
+  readListColumn,
   hasRealFocus,
   SHELL_URL,
   DEFAULT_KEYS,

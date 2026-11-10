@@ -1,6 +1,6 @@
 # Plan: search Maximo records from the palette
 
-Status: planned, not built. Written 2026-11-10, revised the same day after discussion with Elliot.
+Status: built (2026-11-10). Elliot agreed the typed word order for descriptions and the app table. The instance checks below are covered by `tests/real-navigation.spec.js` and `tests/field-filters.spec.js`.
 
 ## Goal
 
@@ -46,7 +46,7 @@ Within one field, the filter row's own syntax applies, as if typed there:
 
 - `%` is a wildcard. Text fields already match "contains" by default, so `%` is mostly for clarity.
 - A comma means "any of": `status=APPR,INPRG`. That's how two typed statuses become an "or" inside the status field, while the fields stay ANDed.
-- A leading `=` means an exact match. Statuses and sites should be exact, so `APPR` doesn't also find `WAPPR`.
+- A leading `=` means an exact match. Statuses and sites should be exact, so `APPR` doesn't also find `WAPPR`. In the URL this gives `status==APPR` (field, `=`, then the value `=APPR`).
 
 These three need confirming on the instance (see checks below).
 
