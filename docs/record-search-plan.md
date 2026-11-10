@@ -97,6 +97,28 @@ Ctrl/Cmd+Enter could open the matching list instead, keeping today's behaviour r
 - Each request asks for at most 10 rows and 5 fields.
 - REST calls don't start a UI session, so they shouldn't count towards the session limit, but that's worth confirming.
 
+### 6. When the user can't use the REST API
+
+Not every user can query `mxapiwodetail` and the others. Maximo checks object structure security, and how it's set up varies by site:
+
+- Usually each standard object structure is tied to its app (`MXAPIWODETAIL` to `WOTRACK`), so a user who can read Work Order Tracking can query it. Nothing extra needs granting.
+- Some sites turn on object structure security without that link, or remove REST access for most users. Then the query is refused (HTTP 401/403, a `BMXAA` error).
+- The object structure may also be missing or renamed on a customised system (404).
+
+The palette handles it per app, server and user:
+
+1. The first record search for an app sends the query as normal.
+2. If Maximo refuses it or the structure is missing, the app is marked "no record search" in local storage (`records:<origin>|<userid>`, with the reason), and no more queries are sent for it. The mark is cleared by the existing **refresh** command, by Clear on the options page, or after a day, like the app list.
+3. The palette falls back to what it does today: `wo pump` opens Work Order Tracking with the list filtered. That filter goes through the normal UI, where the user's app rights apply, so it works for anyone who can open the app. The QBE filter can carry the same words, so `wo 1002 pump APPR BEDFORD` becomes `wonum=%1002%|description=%pump%|status=APPR|siteid=BEDFORD`, and Maximo opens the record directly when only one matches.
+4. The app row says so in a small note ("Record search not available, Enter opens the filtered list"), and the options page shows which apps have it off and why, so an admin knows what to grant.
+
+Other routes considered and not planned:
+
+- **Reading the app's own list table** by opening it in a hidden frame. It uses the UI rights the user already has, but every search starts a UI session (the test login already runs into the session limit), it's slow, and it breaks when the screen layout changes.
+- **The older `/maximo/api/` or `oslc/os` with a different structure** the user might have access to. It's the same security check, so it rarely helps.
+
+For admins who want record search for everyone: link each object structure to its app in Object Structures (Action: Configure Object Structure Security), or grant the object structure in the security group. The README would say this.
+
 ## Which apps
 
 Every app needs three facts: its object structure, its identifier field and its unique id field. Two ways to get them:
@@ -139,6 +161,7 @@ The instance is on Elliot's LAN, so these can only be checked from his Mac. Step
 4. `useqbe` accepts several fields separated by `|`.
 5. REST calls don't use up UI sessions.
 6. Status values can be read per domain, e.g. `/oslc/os/mxapisynonymdomain?oslc.where=domainid="WOSTATUS"`, and `status in [...]` works in `oslc.where`.
+7. What a user without REST access gets back (status code and message), using a test user with fewer rights, and whether the standard object structures are linked to their apps on this instance.
 
 ## Tests
 
@@ -150,6 +173,7 @@ Following the project rules (live Maximo, one login and tab, most Enter targets 
 - `wo <word> <STATUS>` returns only that status; two statuses return either.
 - Typing fast sends one request for the final text (check the network log).
 - A failing REST call (routed to 500) leaves the app row working.
+- A refused REST call (routed to 403) marks the app, sends no more queries for it, and Enter opens the filtered list with all the words in the QBE filter.
 - One test in `real-navigation.spec.js` really opens a found record.
 
 Test records are looked up at the start of the run (the first work order the test user can see), so the tests don't depend on fixed data.
