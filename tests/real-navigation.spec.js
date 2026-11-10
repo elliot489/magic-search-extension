@@ -71,6 +71,36 @@ test.describe("Maximo really opens what Enter asks for", () => {
     await expectFilteredBy(page, "first");
   });
 
+  // From an app, "home" goes back to the Start Center: the palette opened
+  // there searches apps, not actions (no app tag).
+  test('"home" + Enter goes back to the Start Center', async ({ page }) => {
+    await enterAndLoad(page, "wo", "wotrack");
+    await expect(iframeTextField(page)).toBeVisible({ timeout: 30_000 });
+    const url = await enterAndLoad(page, "home", "startcntr");
+    expect(url.searchParams.get("additionalevent")).toBeNull();
+    // Maximo's frame has left Work Order Tracking (the Start Center may not
+    // name itself in the frame's address).
+    await expect
+      .poll(
+        () =>
+          maximoFrame(page)
+            .locator("body")
+            .evaluate((b) => (new URL(b.ownerDocument.location.href).searchParams.get("value") || "").toLowerCase())
+            .catch(() => "wotrack"),
+        { timeout: 30_000 }
+      )
+      .not.toBe("wotrack");
+    await waitForMaximoIdle(page);
+    await openPalette(page, undefined, { context: true });
+    await expect(page.locator(".magic-search-tag")).toBeHidden();
+    await expect(palette(page).input).toHaveAttribute("placeholder", "Search Maximo...");
+    await page.keyboard.press("Escape");
+  });
+
+  // These two run after the Start Center test: when a filter finds a single
+  // work order, Maximo opens it, and opening Work Order Tracking again later
+  // in the same session shows that record instead of the list.
+
   // A real work order, read with the test's own REST request (the extension
   // doesn't use this API): one whose status is letters only and with a site.
   async function someWorkOrder(page) {
@@ -121,32 +151,6 @@ test.describe("Maximo really opens what Enter asks for", () => {
       expect(result.rows.length, "rows listed").toBeGreaterThan(0);
       expect(result.rows.filter((r) => r.toUpperCase() !== wo.status)).toEqual([]);
     }
-  });
-
-  // From an app, "home" goes back to the Start Center: the palette opened
-  // there searches apps, not actions (no app tag).
-  test('"home" + Enter goes back to the Start Center', async ({ page }) => {
-    await enterAndLoad(page, "wo", "wotrack");
-    await expect(iframeTextField(page)).toBeVisible({ timeout: 30_000 });
-    const url = await enterAndLoad(page, "home", "startcntr");
-    expect(url.searchParams.get("additionalevent")).toBeNull();
-    // Maximo's frame has left Work Order Tracking (the Start Center may not
-    // name itself in the frame's address).
-    await expect
-      .poll(
-        () =>
-          maximoFrame(page)
-            .locator("body")
-            .evaluate((b) => (new URL(b.ownerDocument.location.href).searchParams.get("value") || "").toLowerCase())
-            .catch(() => "wotrack"),
-        { timeout: 30_000 }
-      )
-      .not.toBe("wotrack");
-    await waitForMaximoIdle(page);
-    await openPalette(page, undefined, { context: true });
-    await expect(page.locator(".magic-search-tag")).toBeHidden();
-    await expect(palette(page).input).toHaveAttribute("placeholder", "Search Maximo...");
-    await page.keyboard.press("Escape");
   });
 
   // Last: it leaves an unsaved new record open (never saved).
