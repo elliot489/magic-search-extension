@@ -29,6 +29,17 @@ var MagicSearchApps = (() => {
     "work order tracking": ["work orders"],
   };
 
+  // Parts of compound words in Maximo app names, e.g. Database = data + base,
+  // Workflow = work + flow, Storerooms = store + rooms. A word made of two of
+  // these gets aliases from its parts' initials ("db" for Database). Kept to
+  // whole words of 3+ letters, so ordinary words aren't split by accident.
+  const COMPOUND_PARTS = new Set([
+    "back", "base", "bench", "board", "book", "case", "check", "dash", "data", "down", "file",
+    "flow", "foot", "frame", "gate", "hand", "head", "home", "house", "key", "line", "list",
+    "load", "mark", "note", "over", "pad", "place", "point", "print", "room", "set", "sheet",
+    "shop", "side", "store", "time", "tip", "tool", "ware", "way", "word", "work", "yard",
+  ]);
+
   const SMALL_WORDS = new Set(["of", "and", "the", "for", "to", "&", "a", "an"]);
   const SHOW_TOP = 10;
 
@@ -79,9 +90,26 @@ var MagicSearchApps = (() => {
     return words.map((w) => w[0]).join("").toLowerCase();
   }
 
+  // "Database" -> ["Data", "base"]; "Storerooms" -> ["Store", "rooms"]; other
+  // words -> [word]. The second part may end in "s" (a plural).
+  function splitCompound(word) {
+    const lower = word.toLowerCase();
+    for (let i = 3; i <= lower.length - 3; i++) {
+      const first = lower.slice(0, i);
+      const second = lower.slice(i);
+      const singular = second.endsWith("s") ? second.slice(0, -1) : second;
+      if (COMPOUND_PARTS.has(first) && (COMPOUND_PARTS.has(second) || COMPOUND_PARTS.has(singular))) {
+        return [word.slice(0, i), word.slice(i)];
+      }
+    }
+    return [word];
+  }
+
   // Generated aliases for a group, each with its kind:
   // "id" (an app id), "full" (initials of every word), "two" (first two
-  // words), "extra" (EXTRA_ALIASES); FIXED_ALIASES count as "id".
+  // words), "extra" (EXTRA_ALIASES), "compound" (the same initials with
+  // compound words split: "dbc" and "db" for Database Configuration);
+  // FIXED_ALIASES count as "id".
   function generatedAliases(name, versions) {
     const out = [];
     const add = (alias, kind) => {
@@ -98,6 +126,11 @@ var MagicSearchApps = (() => {
       add(initials(words.slice(0, 2)), "two");
     }
     for (const extra of EXTRA_ALIASES[name] || []) add(extra, "extra");
+    const parts = words.flatMap(splitCompound);
+    if (parts.length > words.length) {
+      add(initials(parts), "compound");
+      add(initials(parts.slice(0, 2)), "compound");
+    }
     return out;
   }
 
@@ -155,7 +188,7 @@ var MagicSearchApps = (() => {
   // How well a group matches a query (lower is better; -1 = no match), and
   // which alias matched (shown next to the label).
   //  0 exact app id or edited alias   1 exact full-name initials
-  //  2 exact two-word initials/extra  3 label starts with the query
+  //  2 exact two-word initials/extra/compound  3 label starts with the query
   //  4 an alias starts with it        5 a later word of the label starts with it
   //  6 label contains it              7 a word of the module name starts with it
   function matchGroup(group, query) {
@@ -213,6 +246,7 @@ var MagicSearchApps = (() => {
     appsFromModules,
     withInsertFlags,
     generatedAliases,
+    splitCompound,
     buildGroups,
     variantChoicesFor,
     matchGroup,
