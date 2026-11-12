@@ -166,14 +166,22 @@ async function firstWorking(structures, mbo, select, where, notes) {
 
 // Attributes of one table through its own object structure's JSON schema
 // (only when MAXATTRIBUTE can't be read).
-async function attributesFromSchema(structures, table, notes) {
-  for (const { os } of structures.filter((s) => s.mbo === table)) {
+async function attributesFromSchema(structures, table, notes, available) {
+  const names = [
+    ...structures.filter((s) => s.mbo === table).map((s) => s.os),
+    ...(SCHEMA_OS[table] || []),
+    `MXAPI${table}`,
+    `MX${table}`,
+  ].filter((os, i, all) => all.indexOf(os) === i && (!available.size || available.has(os)));
+  for (const os of names) {
     try {
       const schema = await getJson(`/oslc/jsonschemas/${os.toLowerCase()}`);
-      const props = Object.entries(schema.properties || {})
+      // Some versions nest the main object's schema one level down.
+      const main = schema.properties ? schema : Object.values(schema).find((v) => v && v.properties) || {};
+      const props = Object.entries(main.properties || {})
         .filter(([, p]) => p && p.type !== "array" && p.type !== "object")
         .map(([name, p]) => ({ name: name.toLowerCase(), type: String(p.subType || p.type || "").toUpperCase(), title: p.title || "" }));
-      if (props.length) return { from: `jsonschema ${os}`, attrs: props };
+      if (props.length) return { from: `jsonschema ${os} (only the attributes in that structure)`, attrs: props };
     } catch (err) {
       notes.push(`${table} schema through ${os}: ${err.message}`);
     }
@@ -244,12 +252,32 @@ const GUESSES = [
   { os: "MXAPIMAXAPP", mbo: "MAXAPPS" },
   { os: "MXAPIOBJECT", mbo: "MAXOBJECT" },
   { os: "MXOBJECTCFG", mbo: "MAXOBJECTCFG" },
+  { os: "LUGOBJCFG", mbo: "MAXOBJECTCFG" },
   { os: "MXAPIMAXAPPS", mbo: "MAXAPPS" },
   { os: "MXAPPS", mbo: "MAXAPPS" },
   { os: "MXAPIMAXATTRIBUTE", mbo: "MAXATTRIBUTE" },
   { os: "MXAPIMAXOBJECT", mbo: "MAXOBJECT" },
   { os: "MXOBJECT", mbo: "MAXOBJECT" },
 ];
+
+// Object structures whose JSON schema lists a table's attributes, for tables
+// whose structure isn't simply MXAPI<table> or MX<table>.
+const SCHEMA_OS = {
+  COMPANIES: ["MXAPIVENDOR", "MXVENDOR"],
+  COMPMASTER: ["MXAPIVENDORMSTR", "MXVENDORMSTR"],
+  MAXUSER: ["MASAPIUSER", "MXAPIUSER", "MXUSER"],
+  WORKORDER: ["MXAPIWODETAIL", "MXAPIWO", "MXWO"],
+  LOCATIONS: ["MXAPIOPERLOC", "MXAPILOCATIONS", "MXOPERLOC"],
+  SR: ["MXAPISR", "MXSR"],
+  INVENTORY: ["MXAPIINVENTORY", "MXINVENTORY"],
+  BULLETINBOARD: ["MXAPIBBOARD", "MXBBOARD"],
+  CHARTOFACCOUNTS: ["MXAPICHARTOFACCOUNTS", "MXCOA", "MXGLACCOUNT"],
+  WFINSTANCE: ["MXAPIWFINSTANCE"],
+  MAXLOGGER: ["MXAPILOGGER", "MXLOGGER"],
+  CLASSSTRUCTURE: ["MXAPICLASSIFICATION", "MXCLASSIFICATION"],
+  PERSONGROUP: ["MXAPIGROUP", "MXPERSONGROUP"],
+  MAXGROUP: ["MXAPIMAXGROUP", "MASAPIGROUP"],
+};
 
 // Main tables of the apps the extension knows, if MAXAPPS can't be read.
 const KNOWN_TABLES = {
@@ -281,6 +309,7 @@ async function main() {
       notes.push(`apimeta: ${err.message}`);
       return [];
     });
+    const available = new Set((Array.isArray(meta) ? meta : []).map((m) => String(m.osName || "").toUpperCase()).filter(Boolean));
     const structures = await structuresWithMbo(meta, notes);
     notes.push(`${structures.length} object structures with a known main object`);
     for (const g of GUESSES) if (!structures.some((s) => s.os === g.os)) structures.push(g);
@@ -372,11 +401,15 @@ async function main() {
           persistent: r.persistent,
         });
       }
-    } else {
-      for (const t of tables) {
-        const found = await attributesFromSchema(structures, t, notes);
+    }
+    // Tables still without attributes: their own structure's JSON schema.
+    const missing = tables.filter((t) => !attrsByTable.has(t));
+    if (missing.length) {
+      notes.push(`${missing.length} tables read from JSON schemas`);
+      await inBatches(missing, 6, async (t) => {
+        const found = await attributesFromSchema(structures, t, [], available);
         if (found) attrsByTable.set(t, found);
-      }
+      });
     }
 
     const result = apps.map((app) => {
