@@ -209,10 +209,12 @@ async function structuresWithMbo(meta, notes) {
   notes.push(`apimeta lists ${names.length} object structures`);
   const known = new Set(listed.map((s) => s.os));
   let sampled = false;
+  let misses = 0;
   const found = await inBatches(
     names.filter((n) => !known.has(n)),
     8,
     async (os) => {
+      if (misses > 20) return null; // this Maximo's apimeta pages don't name it
       for (const url of [`/oslc/apimeta/${os.toLowerCase()}?lean=1`, `/oslc/jsonschemas/${os.toLowerCase()}`]) {
         try {
           const detail = await getJson(url);
@@ -224,6 +226,7 @@ async function structuresWithMbo(meta, notes) {
           }
         } catch (_) {}
       }
+      misses++;
       return null;
     }
   );
@@ -235,6 +238,9 @@ async function structuresWithMbo(meta, notes) {
 
 // Object structure names to try when apimeta doesn't list one.
 const GUESSES = [
+  { os: "MXAPIMAXAPP", mbo: "MAXAPPS" },
+  { os: "MXAPIOBJECT", mbo: "MAXOBJECT" },
+  { os: "MXOBJECTCFG", mbo: "MAXOBJECTCFG" },
   { os: "MXAPIMAXAPPS", mbo: "MAXAPPS" },
   { os: "MXAPPS", mbo: "MAXAPPS" },
   { os: "MXAPIMAXATTRIBUTE", mbo: "MAXATTRIBUTE" },
