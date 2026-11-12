@@ -77,7 +77,10 @@ async function request(pathAndQuery, { method = "GET", headers = {}, body } = {}
 }
 async function getJson(pathAndQuery) {
   const res = await request(pathAndQuery);
-  if (!res.ok) throw new Error(`${pathAndQuery.split("?")[0]}: HTTP ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${pathAndQuery.split("?")[0]}: HTTP ${res.status} ${text.replace(/\s+/g, " ").slice(0, 300)}`);
+  }
   const type = res.headers.get("content-type") || "";
   if (!type.includes("json")) throw new Error(`${pathAndQuery.split("?")[0]}: not JSON (${type || "no type"}), not signed in?`);
   return res.json();
@@ -302,20 +305,48 @@ async function main() {
     );
     let objectRows = null;
     if (!attrRows) {
-      // Database Configuration's structure: MAXOBJECT with its MAXATTRIBUTE children.
-      for (const child of ["maxattribute", "maxattributecfg"]) {
-        objectRows = await firstWorking(
-          structures,
-          "MAXOBJECT",
-          `objectname,${child}{attributename,maxtype,persistent,title}`,
-          tables.length && tables.length <= 300 ? `objectname in [${tables.map((t) => `"${t}"`).join(",")}]` : "",
-          notes
+      // Database Configuration's structures: MAXOBJECT(CFG) with its attributes
+      // as children. One table at a time, all fields, children found by shape.
+      const oss = structures.filter((st) => st.mbo === "MAXOBJECT" || st.mbo === "MAXOBJECTCFG").map((st) => st.os);
+      const attributesOf = async (os, select, t) => {
+        const res = await getJson(
+          `/oslc/os/${os.toLowerCase()}?lean=1&oslc.select=${encodeURIComponent(select)}&oslc.where=${encodeURIComponent(`objectname="${t}"`)}`
         );
-        if (objectRows && objectRows.some((o) => Array.isArray(o[child]))) {
-          for (const o of objectRows) o.maxattribute = o[child] || [];
+        const o = (res.member || [])[0];
+        if (!o) return null;
+        return Object.values(o).find((v) => Array.isArray(v) && v.length && v[0] && "attributename" in v[0]) || null;
+      };
+      const probe = tables.includes("PERSON") ? "PERSON" : tables[0];
+      for (const os of oss) {
+        let select = null;
+        for (const sel of ["*", "*,maxattribute{*}", "*,maxattributecfg{*}", "objectname,maxattribute{attributename,maxtype,title}"]) {
+          try {
+            if (await attributesOf(os, sel, probe)) {
+              select = sel;
+              break;
+            }
+            notes.push(`MAXOBJECT through ${os} with select ${sel}: no attributes for ${probe}`);
+          } catch (err) {
+            notes.push(`MAXOBJECT through ${os} with select ${sel}: ${err.message}`);
+          }
+        }
+        if (!select) continue;
+        let failed = 0;
+        const rows = await inBatches(tables, 6, async (t) => {
+          try {
+            const child = await attributesOf(os, select, t);
+            return child ? { objectname: t, maxattribute: child } : null;
+          } catch (err) {
+            if (failed++ === 0) notes.push(`MAXOBJECT through ${os}: ${err.message}`);
+            return null;
+          }
+        });
+        const ok = rows.filter(Boolean);
+        notes.push(`MAXOBJECT through ${os}: attributes for ${ok.length} of ${tables.length} tables`);
+        if (ok.length) {
+          objectRows = ok;
           break;
         }
-        objectRows = null;
       }
     }
     if (objectRows) {
