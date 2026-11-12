@@ -89,8 +89,7 @@ Some apps have no DESCRIPTION field, so their text searches another one by defau
 | CI Types | `classstructureid` |
 | Record Release, Launch in Context | `displayname` |
 | Time Zone Rules | `timezonename` |
-| Configure Tooltips | `name` |
-| Cognos Analytics, Report Viewer | `reportname` |
+| Report Viewer | `reportname` |
 | Failure Codes | `failurecode` |
 | Message Tracking, Message Reprocessing | `ifacename` |
 | Shipment Receiving | `shipmentnum` |

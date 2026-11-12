@@ -186,8 +186,6 @@ test.describe("Maximo really opens what Enter asks for", () => {
     "ci types": ["CITYPE"],
     "record release": ["RLADMIN"],
     "time zone rules": ["TZRULE"],
-    "configure tooltips": ["SCHTTMGR"],
-    "cognos analytics": ["COGNOSHOME"],
     "report viewer": ["RPTOUTPUT"],
     "failure codes": ["FAILURE"],
     "launch in context": ["LAUNCH"],

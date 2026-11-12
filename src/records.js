@@ -42,7 +42,8 @@ var MagicSearchRecords = (() => {
   // and the name shown on the chip. MAXAPPS's main table isn't always what
   // the list shows: Exchange Rates and Chart of Accounts list organizations,
   // and Scheduling Alternate Resources lists schedules, all with DESCRIPTION,
-  // so they aren't here. Keyed by app group, like
+  // so they aren't here. Configure Tooltips lists templates and Cognos
+  // Analytics has no list, so neither has a default either. Keyed by app group, like
   // APP_FIELDS. Every other app searches DESCRIPTION.
   const TEXT_FIELDS = {
     people: { field: "displayname", label: "Name" }, // PERSON
@@ -57,8 +58,6 @@ var MagicSearchRecords = (() => {
     "ci types": { field: "classstructureid", label: "Classification" }, // CDMCITYPES
     "record release": { field: "displayname", label: "Name" }, // MAXRECORDLOCK
     "time zone rules": { field: "timezonename", label: "Time zone" }, // TIMEZONERULE
-    "configure tooltips": { field: "name", label: "Name" }, // SCHTOOLTIP
-    "cognos analytics": { field: "reportname", label: "Report" }, // REPORTOUTPUT
     "report viewer": { field: "reportname", label: "Report" }, // REPORTOUTPUT
     "failure codes": { field: "failurecode", label: "Failure code" }, // FAILURELIST
     "launch in context": { field: "displayname", label: "Name" }, // MAXLAUNCHENTRY
