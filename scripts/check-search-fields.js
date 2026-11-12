@@ -148,7 +148,7 @@ async function queryAll(os, select, where) {
 
 // Try each object structure on mbo until one answers.
 async function firstWorking(structures, mbo, select, where, notes) {
-  const candidates = structures.filter((s) => s.mbo === mbo).map((s) => s.os);
+  const candidates = structures.filter((s) => s.mbo === mbo || s.mbo === `${mbo}CFG`).map((s) => s.os);
   for (const os of candidates) {
     try {
       const rows = await queryAll(os, select, where);
@@ -176,6 +176,61 @@ async function attributesFromSchema(structures, table, notes) {
     }
   }
   return null;
+}
+
+// apimeta's list gives each structure's name (osName) but not always its main
+// object; each structure's own apimeta page, or its JSON schema, does.
+const MBO_KEY = /^(mainmbo|mainobject|mbo|mboname|objectname|parentmbo|resource)$/i;
+function findMbo(node, depth = 0) {
+  if (!node || typeof node !== "object" || depth > 3) return "";
+  for (const [k, v] of Object.entries(node)) if (MBO_KEY.test(k) && typeof v === "string" && /^[A-Z0-9_]+$/i.test(v)) return v.toUpperCase();
+  for (const v of Object.values(node)) {
+    const found = typeof v === "object" ? findMbo(v, depth + 1) : "";
+    if (found) return found;
+  }
+  return "";
+}
+
+async function inBatches(items, size, fn) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
+  return out;
+}
+
+async function structuresWithMbo(meta, notes) {
+  const listed = structuresFrom(meta);
+  const names = [];
+  (function walk(node) {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (typeof node.osName === "string") names.push(node.osName.toUpperCase());
+    else for (const v of Object.values(node)) walk(v);
+  })(meta);
+  notes.push(`apimeta lists ${names.length} object structures`);
+  const known = new Set(listed.map((s) => s.os));
+  let sampled = false;
+  const found = await inBatches(
+    names.filter((n) => !known.has(n)),
+    8,
+    async (os) => {
+      for (const url of [`/oslc/apimeta/${os.toLowerCase()}?lean=1`, `/oslc/jsonschemas/${os.toLowerCase()}`]) {
+        try {
+          const detail = await getJson(url);
+          const mbo = findMbo(detail);
+          if (mbo && mbo !== os) return { os, mbo };
+          if (!sampled) {
+            sampled = true;
+            notes.push(`no main object found in ${url}: ${JSON.stringify(detail).slice(0, 800)}`);
+          }
+        } catch (_) {}
+      }
+      return null;
+    }
+  );
+  const all = [...listed, ...found.filter(Boolean)];
+  const forTables = all.filter((s) => /^(MAXAPPS|MAXATTRIBUTE|MAXOBJECT|MAXOBJECTCFG|MAXATTRIBUTECFG)$/.test(s.mbo));
+  notes.push(`structures on the data dictionary: ${forTables.map((s) => `${s.os} (${s.mbo})`).join(", ") || "none"}`);
+  return all;
 }
 
 // Object structure names to try when apimeta doesn't list one.
@@ -217,9 +272,8 @@ async function main() {
       notes.push(`apimeta: ${err.message}`);
       return [];
     });
-    const structures = structuresFrom(meta);
-    notes.push(`${structures.length} object structures listed by apimeta`);
-    if (!structures.length) notes.push(`apimeta looked like: ${JSON.stringify(meta).slice(0, 600)}`);
+    const structures = await structuresWithMbo(meta, notes);
+    notes.push(`${structures.length} object structures with a known main object`);
     for (const g of GUESSES) if (!structures.some((s) => s.os === g.os)) structures.push(g);
 
     // Main table per app.
@@ -243,13 +297,20 @@ async function main() {
     let objectRows = null;
     if (!attrRows) {
       // Database Configuration's structure: MAXOBJECT with its MAXATTRIBUTE children.
-      objectRows = await firstWorking(
-        structures,
-        "MAXOBJECT",
-        "objectname,maxattribute{attributename,maxtype,persistent,title}",
-        tables.length && tables.length <= 300 ? `objectname in [${tables.map((t) => `"${t}"`).join(",")}]` : "",
-        notes
-      );
+      for (const child of ["maxattribute", "maxattributecfg"]) {
+        objectRows = await firstWorking(
+          structures,
+          "MAXOBJECT",
+          `objectname,${child}{attributename,maxtype,persistent,title}`,
+          tables.length && tables.length <= 300 ? `objectname in [${tables.map((t) => `"${t}"`).join(",")}]` : "",
+          notes
+        );
+        if (objectRows && objectRows.some((o) => Array.isArray(o[child]))) {
+          for (const o of objectRows) o.maxattribute = o[child] || [];
+          break;
+        }
+        objectRows = null;
+      }
     }
     if (objectRows) {
       for (const o of objectRows) {
@@ -304,7 +365,7 @@ async function main() {
     });
 
     fs.mkdirSync(path.dirname(OUT), { recursive: true });
-    fs.writeFileSync(OUT, JSON.stringify({ checkedAt: new Date().toISOString(), base: BASE, notes, structures, apps: result }, null, 1));
+    fs.writeFileSync(OUT, JSON.stringify({ checkedAt: new Date().toISOString(), base: BASE, notes, structures, apps: result, apimeta: meta }, null, 1));
 
     const unknown = result.filter((r) => r.hasDescription === null);
     const problems = result.filter((r) => r.currentExists === false);
