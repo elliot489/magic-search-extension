@@ -39,7 +39,10 @@ var MagicSearchRecords = (() => {
   };
   // Apps whose main table has no DESCRIPTION attribute (checked on the test
   // instance with npm run check-search-fields): the field searched instead,
-  // and the name shown on the chip. Keyed by app group, like
+  // and the name shown on the chip. MAXAPPS's main table isn't always what
+  // the list shows: Exchange Rates and Chart of Accounts list organizations,
+  // and Scheduling Alternate Resources lists schedules, all with DESCRIPTION,
+  // so they aren't here. Keyed by app group, like
   // APP_FIELDS. Every other app searches DESCRIPTION.
   const TEXT_FIELDS = {
     people: { field: "displayname", label: "Name" }, // PERSON
@@ -49,14 +52,11 @@ var MagicSearchRecords = (() => {
     "company master": { field: "name", label: "Name" }, // COMPMASTER
     inventory: { field: "itemnum", label: "Item" }, // INVENTORY
     "bulletin board": { field: "subject", label: "Subject" }, // BULLETINBOARD
-    "exchange rates": { field: "currencycode", label: "Currency" }, // EXCHANGE
-    "chart of accounts": { field: "accountname", label: "Account name" }, // CHARTOFACCOUNTS
     "workflow administration": { field: "processname", label: "Process" }, // WFINSTANCE
     logging: { field: "logger", label: "Logger" }, // MAXLOGGER
     "ci types": { field: "classstructureid", label: "Classification" }, // CDMCITYPES
     "record release": { field: "displayname", label: "Name" }, // MAXRECORDLOCK
     "time zone rules": { field: "timezonename", label: "Time zone" }, // TIMEZONERULE
-    "scheduling alternate resources": { field: "projectname", label: "Project" }, // SKDOVERRIDEAVAIL
     "configure tooltips": { field: "name", label: "Name" }, // SCHTOOLTIP
     "cognos analytics": { field: "reportname", label: "Report" }, // REPORTOUTPUT
     "report viewer": { field: "reportname", label: "Report" }, // REPORTOUTPUT

@@ -84,14 +84,11 @@ Some apps have no DESCRIPTION field, so their text searches another one by defau
 | Companies, Company Master | `name` |
 | Inventory | `itemnum` |
 | Bulletin Board | `subject` |
-| Exchange Rates | `currencycode` |
-| Chart of Accounts | `accountname` |
 | Workflow Administration | `processname` |
 | Logging | `logger` |
 | CI Types | `classstructureid` |
 | Record Release, Launch in Context | `displayname` |
 | Time Zone Rules | `timezonename` |
-| Scheduling Alternate Resources | `projectname` |
 | Configure Tooltips | `name` |
 | Cognos Analytics, Report Viewer | `reportname` |
 | Failure Codes | `failurecode` |

@@ -1,7 +1,7 @@
 const Records = require("../src/records.js");
 const {
   test,
-  appUrl,
+  gotoApp,
   expect,
   palette,
   openPalette,
@@ -181,14 +181,11 @@ test.describe("Maximo really opens what Enter asks for", () => {
     "company master": ["COMPMASTER"],
     inventory: ["INVENTOR"],
     "bulletin board": ["BBOARD"],
-    "exchange rates": ["EXCHANGE"],
-    "chart of accounts": ["CHRTACCT"],
     "workflow administration": ["WFADMIN"],
     logging: ["LOGGING"],
     "ci types": ["CITYPE"],
     "record release": ["RLADMIN"],
     "time zone rules": ["TZRULE"],
-    "scheduling alternate resources": ["SCHOVAVAIL"],
     "configure tooltips": ["SCHTTMGR"],
     "cognos analytics": ["COGNOSHOME"],
     "report viewer": ["RPTOUTPUT"],
@@ -214,6 +211,27 @@ test.describe("Maximo really opens what Enter asks for", () => {
     return texts.flatMap((t) => t.split("\n").filter((line) => /BMXAA\d+E|does not exist|is not valid/i.test(line)));
   }
 
+  // Maximo's own frame (/maximo/ui/?type=embedded...) as a Playwright Frame.
+  function uiFrame(page) {
+    return page.frames().find((f) => /\/maximo\/ui\//.test(f.url()) && f !== page.mainFrame()) || null;
+  }
+
+  // The UI session the frame is in (Maximo puts it in its forms and links).
+  async function uiSessionId(frame) {
+    return frame
+      .evaluate(() => {
+        const input = document.querySelector('input[name="uisessionid"]');
+        if (input && input.value) return input.value;
+        const m = document.documentElement.innerHTML.match(/uisessionid=(\d+)/);
+        return m ? m[1] : "";
+      })
+      .catch(() => "");
+  }
+
+  // Each page load starts a new Maximo UI session, and the login allows only
+  // a few, so these checks don't load the page: they open each app inside
+  // Maximo's frame, in the UI session it already has (as Maximo's own menu
+  // does). Only the first one loads Work Order Tracking if the frame isn't there.
   for (const [group, apps] of Object.entries(TEXT_FIELD_APPS)) {
     for (const app of apps) {
       const field = Records.TEXT_FIELDS[group].field;
@@ -221,21 +239,35 @@ test.describe("Maximo really opens what Enter asks for", () => {
         test.info().setTimeout(test.info().timeout + 60_000);
         const qbe = Records.qbe("a", group);
         expect(qbe).toBe(`${field}=a`);
-        const url = new URL(appUrl(app.toLowerCase()));
-        url.searchParams.set("additionalevent", "useqbe");
-        url.searchParams.set("additionaleventvalue", qbe);
-        await page.goto(url.toString());
-        await page.waitForLoadState("load");
+        let frame = uiFrame(page);
+        let session = frame ? await uiSessionId(frame) : "";
+        if (!session) {
+          await gotoApp(page, "wotrack");
+          frame = uiFrame(page);
+          session = frame ? await uiSessionId(frame) : "";
+        }
+        expect(session, "Maximo's UI session id in its frame").not.toBe("");
+        const url = new URL(frame.url());
+        url.search = new URLSearchParams({
+          type: "embedded",
+          event: "loadapp",
+          value: app.toLowerCase(),
+          additionalevent: "useqbe",
+          additionaleventvalue: qbe,
+          uisessionid: session,
+        }).toString();
+        url.hash = "";
+        test.info().annotations.push({ type: "url", description: url.toString() });
+        await frame.goto(url.toString(), { waitUntil: "load" });
         // Wait for the app: a list (filter fields) or a single record opened.
         await expect
           .poll(
             () =>
-              maximoFrame(page)
-                .locator("body")
-                .evaluate((body) => {
-                  const doc = body.ownerDocument;
-                  if (doc.readyState !== "complete") return false;
-                  const inputs = [...doc.querySelectorAll("input, textarea")];
+              frame
+                .evaluate(() => {
+                  if (document.readyState !== "complete") return false;
+                  if (/maximum number of sessions/i.test(document.body.innerText)) return "session limit";
+                  const inputs = [...document.querySelectorAll("input, textarea")];
                   return inputs.some((el) => /_tfrow_/.test(el.id)) || inputs.some((el) => el.offsetParent !== null);
                 })
                 .catch(() => false),
@@ -243,8 +275,9 @@ test.describe("Maximo really opens what Enter asks for", () => {
           )
           .toBe(true);
         await waitForMaximoIdle(page);
+        const after = await uiSessionId(frame);
+        test.info().annotations.push({ type: "ui session", description: `${session} -> ${after}` });
         const errors = await maximoErrors(page);
-        test.info().annotations.push({ type: "url", description: url.toString() });
         expect(errors, `Maximo's messages after filtering ${app} on ${field}`).toEqual([]);
       });
     }
