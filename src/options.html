@@ -24,6 +24,8 @@
     input[type=search], input.alias-input { font: inherit; padding: 4px 8px; border: 1px solid #8886; border-radius: 6px; background: transparent; }
     input[type=search] { width: 260px; }
     input.alias-input { width: 100%; box-sizing: border-box; }
+    input.search-field-input { font: inherit; width: 140px; padding: 4px 8px; border: 1px solid #8886; border-radius: 6px; background: transparent; }
+    input.search-field-input.invalid { border-color: #d33; }
     .alias-edited { font-size: 12px; color: #4a8cff; }
     .alias-shared { font-size: 12px; color: #888; }
     .empty { color: #888; }
@@ -63,13 +65,15 @@
   <p class="hint">Apps such as Work Order Tracking and Work Order Tracking (Oil), on the environment picked above. Each environment has its own choice and lists only the versions it has. The search box shows only the version chosen here, and its aliases open it.</p>
   <div id="variants"></div>
 
-  <h3>Aliases</h3>
+  <h3>Aliases and search fields</h3>
   <p class="hint">Short names that open an app, e.g. "wo", listed for the environment picked above (they apply on every environment). Generated from each app's name and id; edit them as a comma-separated list. Reset puts the generated ones back.</p>
+  <p class="hint">The search field is the Maximo attribute that words typed after an app's name search, e.g. "people smith" searches DISPLAYNAME. It's DESCRIPTION for most apps; apps without one have their own default, shown greyed out. Type another attribute to use it instead (e.g. firstname, or item.description through a relationship); clear the field to go back to the default.</p>
   <div class="row"><input id="alias-search" type="search" placeholder="Find an app…" aria-label="Find an app"></div>
   <div id="aliases"></div>
 
   <script src="shortcut.js"></script>
   <script src="apps.js"></script>
+  <script src="records.js"></script>
   <script src="options.js"></script>
   <script src="options-apps.js"></script>
 </body>

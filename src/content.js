@@ -19,7 +19,8 @@
   const REFRESH_COMMAND = "refresh";
 
   // Text after the app name filters the app's list: "assets first" opens
-  // Assets with description = "first", and "wo 1002 pump APPR BEDFORD"
+  // Assets with description = "first" ("people smith" searches the display
+  // name; each app's field can be changed on the options page), and "wo 1002 pump APPR BEDFORD"
   // filters work order number, description, status and site (see
   // src/records.js). Maximo URL parameters used for that:
   // &additionalevent=useqbe&additionaleventvalue=wonum=1002|description=pump|...
@@ -227,7 +228,7 @@
           if (entry.alias) label.dataset.alias = entry.alias;
           if (filter && !entry.group.app.noFilter) {
             li.dataset.filterText = filter;
-            li.dataset.filterLabelText = Records.label(filter, entry.group.name, Catalog.sites(), Catalog.defaultSite());
+            li.dataset.filterLabelText = Records.label(filter, entry.group.name, Catalog.sites(), Catalog.defaultSite(), Catalog.searchFields());
           }
         }
         li.appendChild(label);
@@ -367,7 +368,7 @@
         MagicSearchActions.run(top.action);
         return;
       }
-      const qbe = top.group.app.noFilter || insert ? "" : Records.qbe(filter, top.group.name, Catalog.sites(), Catalog.defaultSite());
+      const qbe = top.group.app.noFilter || insert ? "" : Records.qbe(filter, top.group.name, Catalog.sites(), Catalog.defaultSite(), Catalog.searchFields());
       const url = appUrl(top.group.app.id, { insert, filter: qbe });
       previousFocus = null;
       close();

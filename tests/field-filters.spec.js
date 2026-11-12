@@ -61,6 +61,10 @@ test.describe("reading the words (no browser)", () => {
     ["123 ACTIVE", "job plans", "jpnum=123|status==ACTIVE|siteid==CARLISLE"],
     // Apps without a field table: all the text on the description, as typed.
     ["pump APPR 12", "master pm", "description=pump APPR 12"],
+    // Apps without DESCRIPTION search their own field (TEXT_FIELDS).
+    ["smith", "people", "displayname=smith"],
+    ["acme", "companies", "name=acme"],
+    ["Mr Smith", "people", "displayname=Mr Smith"],
     // Nothing typed: no filter at all.
     ["", "work order tracking", ""],
   ];
@@ -75,6 +79,22 @@ test.describe("reading the words (no browser)", () => {
     expect(Records.qbe("pump SITE2", "work order tracking", SITES, "")).toBe("description=pump|siteid==SITE2|historyflag=0");
   });
 
+  test("a search field chosen on the options page replaces the default", () => {
+    const chosen = { people: "firstname", "work order tracking": "LongDescription", inventory: "item.description" };
+    expect(Records.qbe("smith", "people", SITES, DEFAULT, chosen)).toBe("firstname=smith");
+    expect(Records.qbe("1002 pump", "work order tracking", SITES, DEFAULT, chosen)).toBe(
+      "wonum=1002|longdescription=pump|siteid==CARLISLE|historyflag=0"
+    );
+    expect(Records.qbe("pump", "inventory", SITES, DEFAULT, chosen)).toBe("item.description=pump");
+    expect(Records.label("smith", "people", SITES, DEFAULT, chosen)).toBe("FIRSTNAME: smith");
+    expect(Records.label("pump", "work order tracking", SITES, "", chosen)).toBe("LONGDESCRIPTION: pump");
+    // Choosing the default again shows the usual name.
+    expect(Records.label("smith", "people", SITES, DEFAULT, { people: "displayname" })).toBe("Name: smith");
+    // Not an attribute name: ignored.
+    expect(Records.qbe("smith", "people", SITES, DEFAULT, { people: "display name" })).toBe("displayname=smith");
+    expect(Records.qbe("pump", "master pm", SITES, DEFAULT, { people: "firstname" })).toBe("description=pump");
+  });
+
   test("labels say how each word was read", () => {
     expect(Records.label("1002 pump APPR INPRG BEDFORD", "work order tracking", SITES, DEFAULT)).toBe(
       "WO: 1002 · Description: pump · Status: APPR or INPRG · Site: BEDFORD"
@@ -82,6 +102,7 @@ test.describe("reading the words (no browser)", () => {
     expect(Records.label("pump", "work order tracking", SITES, DEFAULT)).toBe("Description: pump · Site: CARLISLE (default)");
     expect(Records.label("pump", "work order tracking", SITES, "")).toBe("Description: pump");
     expect(Records.label("pump APPR", "master pm", SITES, DEFAULT)).toBe("Description: pump APPR");
+    expect(Records.label("smith", "people", SITES, DEFAULT)).toBe("Name: smith");
   });
 });
 
@@ -186,6 +207,42 @@ test.describe("filtering on several fields", () => {
     await expect(selected(page)).toHaveAttribute("data-filter-label", "Description: pump APPR");
     const target = await enterTarget(page);
     expect(target.searchParams.get("additionaleventvalue")).toBe("description=pump APPR");
+  });
+
+  test("an app's search field can be changed on the options page", async ({ page, options, ext }) => {
+    try {
+      await options.page.bringToFront();
+      await options.page.locator("#alias-search").fill("master pm");
+      const field = options.page.locator('.alias-row[data-group="master pm"] .search-field-input');
+      await expect(field).toHaveValue("");
+      await expect(field).toHaveAttribute("placeholder", "description");
+      // Not an attribute name: marked, not saved.
+      await field.fill("pm title");
+      await field.press("Tab");
+      await expect(field).toHaveClass(/invalid/);
+      expect((await ext.get("sync", "searchFields")).searchFields).toBeUndefined();
+      await field.fill("PMNUM");
+      await field.press("Tab");
+      await expect.poll(async () => (await ext.get("sync", "searchFields")).searchFields).toEqual({ "master pm": "pmnum" });
+      await expect(field).toHaveValue("pmnum");
+
+      await page.bringToFront();
+      await search(page, "master pm pump");
+      await expect(selected(page)).toHaveAttribute("data-filter-label", "PMNUM: pump");
+      const target = await enterTarget(page);
+      expect(target.searchParams.get("additionaleventvalue")).toBe("pmnum=pump");
+
+      // Cleared: back to the default.
+      await options.page.bringToFront();
+      await field.fill("");
+      await field.press("Tab");
+      await expect.poll(async () => (await ext.get("sync", "searchFields")).searchFields).toEqual({});
+      await page.bringToFront();
+      expect((await filterFor(page, "master pm pump")).filter).toBe("description=pump");
+    } finally {
+      await ext.remove("sync", "searchFields");
+      await options.page.locator("#alias-search").fill("");
+    }
   });
 
   test("sites added on the options page count as sites", async ({ page, options, ext }) => {

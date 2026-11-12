@@ -13,6 +13,9 @@
 //   status      any other word in capitals, letters only (APPR, HVAC)
 //   identifier  a word containing a digit, any case (1002, pmp-04)
 //   description everything else (lowercase words)
+// "Description" means the app's search field: DESCRIPTION, unless the app's
+// main table has none (People searches DISPLAYNAME, see TEXT_FIELDS) or the
+// user picked another field for that app on the options page.
 // The fields are ANDed by Maximo's list filter. Several statuses become
 // "any of" (=APPR,=INPRG). Sites and statuses match exactly (=APPR doesn't
 // find WAPPR); identifiers and descriptions match "contains", Maximo's
@@ -34,12 +37,66 @@ var MagicSearchRecords = (() => {
     "preventive maintenance": { id: "pmnum", label: "PM", site: "siteid" },
     "job plans": { id: "jpnum", label: "Job plan", site: "siteid" },
   };
+  // Apps whose main table has no DESCRIPTION attribute (checked on the test
+  // instance with npm run check-search-fields): the field searched instead,
+  // and the name shown on the chip. MAXAPPS's main table isn't always what
+  // the list shows: Exchange Rates and Chart of Accounts list organizations,
+  // and Scheduling Alternate Resources lists schedules, all with DESCRIPTION,
+  // so they aren't here. Configure Tooltips lists templates and Cognos
+  // Analytics has no list, so neither has a default either. Keyed by app group, like
+  // APP_FIELDS. Every other app searches DESCRIPTION.
+  const TEXT_FIELDS = {
+    people: { field: "displayname", label: "Name" }, // PERSON
+    users: { field: "userid", label: "User" }, // MAXUSER (Users and Users (Manage))
+    labor: { field: "laborcode", label: "Labor" }, // LABOR
+    companies: { field: "name", label: "Name" }, // COMPANIES
+    "company master": { field: "name", label: "Name" }, // COMPMASTER
+    inventory: { field: "itemnum", label: "Item" }, // INVENTORY
+    "bulletin board": { field: "subject", label: "Subject" }, // BULLETINBOARD
+    "workflow administration": { field: "processname", label: "Process" }, // WFINSTANCE
+    logging: { field: "logger", label: "Logger" }, // MAXLOGGER
+    "ci types": { field: "classstructureid", label: "Classification" }, // CDMCITYPES
+    "record release": { field: "displayname", label: "Name" }, // MAXRECORDLOCK
+    "time zone rules": { field: "timezonename", label: "Time zone" }, // TIMEZONERULE
+    "report viewer": { field: "reportname", label: "Report" }, // REPORTOUTPUT
+    "failure codes": { field: "failurecode", label: "Failure code" }, // FAILURELIST
+    "launch in context": { field: "displayname", label: "Name" }, // MAXLAUNCHENTRY
+    "message tracking": { field: "ifacename", label: "Interface" }, // MAXINTMSGTRK
+    "message reprocessing": { field: "ifacename", label: "Interface" }, // MAXINTERROR
+    "shipment receiving": { field: "shipmentnum", label: "Shipment" }, // SHIPMENT
+    "operational actions": { field: "stdactnum", label: "Standard action" }, // PLUSGOPERACTION
+    "labor reporting": { field: "laborcode", label: "Labor" }, // LABTRANS
+    "assignment manager": { field: "laborcode", label: "Labor" }, // ASSIGNMENT
+  };
   const DESCRIPTION = "description";
   const STATUS = "status";
   const HISTORY = "historyflag";
 
   function fieldsFor(groupName) {
     return APP_FIELDS[String(groupName || "").toLowerCase()] || null;
+  }
+
+  // A field name as typed on the options page: an attribute, optionally
+  // through a relationship (item.description). Lowercase, or "" if invalid.
+  function cleanField(text) {
+    const t = String(text || "").trim().toLowerCase();
+    return /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/.test(t) ? t : "";
+  }
+
+  // The field an app's free text searches when the user hasn't picked one.
+  function defaultTextField(groupName) {
+    const t = TEXT_FIELDS[String(groupName || "").toLowerCase()];
+    return t ? t.field : DESCRIPTION;
+  }
+
+  // { field, label } for an app's free text. searchFields: the options page's
+  // choices, { groupName: "field" } (sync storage "searchFields").
+  function textField(groupName, searchFields) {
+    const name = String(groupName || "").toLowerCase();
+    const chosen = cleanField((searchFields || {})[name]);
+    const builtin = TEXT_FIELDS[name] || { field: DESCRIPTION, label: "Description" };
+    if (!chosen || chosen === builtin.field) return builtin;
+    return { field: chosen, label: chosen.toUpperCase() };
   }
 
   // A word typed in capitals: has a letter and no lowercase letters.
@@ -79,15 +136,16 @@ var MagicSearchRecords = (() => {
 
   // [field, value] pairs for the list filter, in a fixed order.
   // Nothing typed means no filter (and no default site or history flag).
-  function pairs(text, groupName, sites, defaultSite) {
+  function pairs(text, groupName, sites, defaultSite, searchFields) {
     const t = String(text || "").trim();
     if (!t) return [];
+    const { field } = textField(groupName, searchFields);
     const parts = read(text, groupName, sites, defaultSite);
-    if (!parts) return [[DESCRIPTION, t]];
+    if (!parts) return [[field, t]];
     const fields = fieldsFor(groupName);
     const out = [];
     if (parts.ids.length) out.push([fields.id, parts.ids.join("%")]);
-    if (parts.description.length) out.push([DESCRIPTION, parts.description.join("%")]);
+    if (parts.description.length) out.push([field, parts.description.join("%")]);
     if (parts.statuses.length) out.push([STATUS, parts.statuses.map((s) => `=${s}`).join(",")]);
     if (parts.site) out.push([fields.site, `=${parts.site}`]);
     // A typed status says which records are wanted, closed ones included
@@ -98,29 +156,30 @@ var MagicSearchRecords = (() => {
 
   // The additionaleventvalue for useqbe, e.g. "wonum=1002|status==APPR",
   // or "" when there's nothing to filter.
-  function qbe(text, groupName, sites, defaultSite) {
-    return pairs(text, groupName, sites, defaultSite)
+  function qbe(text, groupName, sites, defaultSite, searchFields) {
+    return pairs(text, groupName, sites, defaultSite, searchFields)
       .map(([field, value]) => `${field}=${value}`)
       .join("|");
   }
 
   // What the highlighted row shows, e.g.
   // "WO: 1002 · Description: pump · Status: APPR · Site: BEDFORD".
-  function label(text, groupName, sites, defaultSite) {
+  function label(text, groupName, sites, defaultSite, searchFields) {
     const t = String(text || "").trim();
     if (!t) return "";
+    const textLabel = textField(groupName, searchFields).label;
     const parts = read(text, groupName, sites, defaultSite);
-    if (!parts) return `Description: ${t}`;
+    if (!parts) return `${textLabel}: ${t}`;
     const fields = fieldsFor(groupName);
     const chips = [];
     if (parts.ids.length) chips.push(`${fields.label}: ${parts.ids.join(" ")}`);
-    if (parts.description.length) chips.push(`Description: ${parts.description.join(" ")}`);
+    if (parts.description.length) chips.push(`${textLabel}: ${parts.description.join(" ")}`);
     if (parts.statuses.length) chips.push(`Status: ${parts.statuses.join(" or ")}`);
     if (parts.site) chips.push(`Site: ${parts.site}${parts.siteIsDefault ? " (default)" : ""}`);
     return chips.join(" · ");
   }
 
-  return { APP_FIELDS, fieldsFor, isCapitals, read, pairs, qbe, label };
+  return { APP_FIELDS, TEXT_FIELDS, fieldsFor, cleanField, defaultTextField, textField, isCapitals, read, pairs, qbe, label };
 })();
 
 if (typeof module !== "undefined") module.exports = MagicSearchRecords;

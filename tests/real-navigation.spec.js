@@ -1,5 +1,7 @@
+const Records = require("../src/records.js");
 const {
   test,
+  gotoApp,
   expect,
   palette,
   openPalette,
@@ -163,6 +165,121 @@ test.describe("Maximo really opens what Enter asks for", () => {
       await ext.remove("sync", "extraSites");
     }
   });
+
+  // Apps whose main table has no DESCRIPTION search another field by default
+  // (src/records.js TEXT_FIELDS; People -> DISPLAYNAME). Open each one with
+  // that filter and check Maximo shows the app without an error, so the
+  // field exists. Loaded straight from the URL: these apps aren't in the
+  // recorded test menu. A user without an app gets Maximo's own "no access"
+  // message, which fails the test too; remove the app from the list below
+  // if that happens.
+  const TEXT_FIELD_APPS = {
+    people: ["PERSON"],
+    users: ["USER"],
+    labor: ["LABOR"],
+    companies: ["COMPANY"],
+    "company master": ["COMPMASTER"],
+    inventory: ["INVENTOR"],
+    "bulletin board": ["BBOARD"],
+    "workflow administration": ["WFADMIN"],
+    logging: ["LOGGING"],
+    "ci types": ["CITYPE"],
+    "record release": ["RLADMIN"],
+    "time zone rules": ["TZRULE"],
+    "report viewer": ["RPTOUTPUT"],
+    "failure codes": ["FAILURE"],
+    "launch in context": ["LAUNCH"],
+    "message tracking": ["INTMSGTRK"],
+    "message reprocessing": ["INTERROR"],
+    "shipment receiving": ["SHIPREC"],
+    "operational actions": ["PLUSGOPACT"],
+    "labor reporting": ["LABREP"],
+    "assignment manager": ["WORKMAN"],
+  };
+
+  test("every app with its own search field is listed here", () => {
+    expect(Object.keys(TEXT_FIELD_APPS).sort()).toEqual(Object.keys(Records.TEXT_FIELDS).sort());
+  });
+
+  // Maximo's messages in its frame(s), e.g. "BMXAA4214E - ...": errors only.
+  async function maximoErrors(page) {
+    const texts = await Promise.all(
+      page.frames().map((f) => f.locator("body").innerText({ timeout: 2_000 }).catch(() => ""))
+    );
+    return texts.flatMap((t) => t.split("\n").filter((line) => /BMXAA\d+E|does not exist|is not valid/i.test(line)));
+  }
+
+  // Maximo's own frame (/maximo/ui/?type=embedded...) as a Playwright Frame.
+  function uiFrame(page) {
+    return page.frames().find((f) => /\/maximo\/ui\//.test(f.url()) && f !== page.mainFrame()) || null;
+  }
+
+  // The UI session the frame is in (Maximo puts it in its forms and links).
+  async function uiSessionId(frame) {
+    return frame
+      .evaluate(() => {
+        const input = document.querySelector('input[name="uisessionid"]');
+        if (input && input.value) return input.value;
+        const m = document.documentElement.innerHTML.match(/uisessionid=(\d+)/);
+        return m ? m[1] : "";
+      })
+      .catch(() => "");
+  }
+
+  // Each page load starts a new Maximo UI session, and the login allows only
+  // a few, so these checks don't load the page: they open each app inside
+  // Maximo's frame, in the UI session it already has (as Maximo's own menu
+  // does). Only the first one loads Work Order Tracking if the frame isn't there.
+  for (const [group, apps] of Object.entries(TEXT_FIELD_APPS)) {
+    for (const app of apps) {
+      const field = Records.TEXT_FIELDS[group].field;
+      test(`${app} (${group}) opens filtered on ${field.toUpperCase()} without an error`, async ({ page }) => {
+        test.info().setTimeout(test.info().timeout + 60_000);
+        const qbe = Records.qbe("a", group);
+        expect(qbe).toBe(`${field}=a`);
+        let frame = uiFrame(page);
+        let session = frame ? await uiSessionId(frame) : "";
+        if (!session) {
+          await gotoApp(page, "wotrack");
+          frame = uiFrame(page);
+          session = frame ? await uiSessionId(frame) : "";
+        }
+        expect(session, "Maximo's UI session id in its frame").not.toBe("");
+        const url = new URL(frame.url());
+        url.search = new URLSearchParams({
+          type: "embedded",
+          event: "loadapp",
+          value: app.toLowerCase(),
+          additionalevent: "useqbe",
+          additionaleventvalue: qbe,
+          uisessionid: session,
+        }).toString();
+        url.hash = "";
+        test.info().annotations.push({ type: "url", description: url.toString() });
+        await frame.goto(url.toString(), { waitUntil: "load" });
+        // Wait for the app: a list (filter fields) or a single record opened.
+        await expect
+          .poll(
+            () =>
+              frame
+                .evaluate(() => {
+                  if (document.readyState !== "complete") return false;
+                  if (/maximum number of sessions/i.test(document.body.innerText)) return "session limit";
+                  const inputs = [...document.querySelectorAll("input, textarea")];
+                  return inputs.some((el) => /_tfrow_/.test(el.id)) || inputs.some((el) => el.offsetParent !== null);
+                })
+                .catch(() => false),
+            { timeout: 30_000 }
+          )
+          .toBe(true);
+        await waitForMaximoIdle(page);
+        const after = await uiSessionId(frame);
+        test.info().annotations.push({ type: "ui session", description: `${session} -> ${after}` });
+        const errors = await maximoErrors(page);
+        expect(errors, `Maximo's messages after filtering ${app} on ${field}`).toEqual([]);
+      });
+    }
+  }
 
   // Last: it leaves an unsaved new record open (never saved).
   test('"new wo" + Enter opens Work Orders ready to insert', async ({ page }) => {

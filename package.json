@@ -4,7 +4,8 @@
   "description": "Command palette style search for Maximo Manage (Chrome extension).",
   "scripts": {
     "test": "playwright test",
-    "discover-actions": "playwright test -c playwright.discover.config.js"
+    "discover-actions": "playwright test -c playwright.discover.config.js",
+    "check-search-fields": "node scripts/check-search-fields.js"
   },
   "engines": {
     "node": ">=20.12"
