@@ -74,6 +74,23 @@ The highlighted app shows how the words were read, e.g. **WO: 1002 · Descriptio
 
 Their (Oil)-style versions use the same fields. Other apps filter only the description, with all the text as typed. The fields are in `APP_FIELDS` in `src/records.js`.
 
+Some apps have no DESCRIPTION field, so their text searches another one by default (`TEXT_FIELDS` in `src/records.js`):
+
+| App | Searches |
+|---|---|
+| People | `displayname` |
+| Users, Users (Manage) | `userid` |
+| Labor | `laborcode` |
+| Companies, Company Master | `name` |
+| Inventory, Stocked Tools | `itemnum` |
+| Bulletin Board | `subject` |
+| Exchange Rates | `currencycode` |
+| Chart of Accounts | `accountname` |
+| Workflow Administration | `processname` |
+| Logging | `logger` |
+
+To search another field in any app, type its attribute name in the app's **Search field** box on the options page, under **Aliases and search fields** (e.g. `firstname` for People, or `item.description` through a relationship). Clear the box to go back to the default. The choice applies on every Maximo server.
+
 **Your sites** are loaded from Maximo with the app list (`/oslc/os/mxapisite`). If your login can't read that, the extension uses your default and insert sites from `/oslc/whoami`. Add any missing sites on the options page under **Environments** (**Extra sites**). A site that isn't known is read as a status, and the label shows it (`Status: LEEDS`).
 
 This uses `&additionalevent=useqbe&additionaleventvalue=wonum=1002|description=pump|status==APPR|siteid==BEDFORD` (and `|historyflag=0` when no status is typed): one `field=value` pair per field, separated by `|`. Each value is what you'd type in the list's filter row: `=APPR` is an exact match, and `=APPR,=INPRG` means either.

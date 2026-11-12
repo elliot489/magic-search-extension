@@ -18,6 +18,9 @@ var MagicSearchCatalog = (() => {
   let aliasEdits = {};
   let savedSites = [];
   let extraSites = [];
+  // Record search field per app group, chosen on the options page:
+  // { groupName: "displayname" } (sync storage "searchFields").
+  let searchFields = {};
   // The user's default site (whoami), used by record search when no site is typed.
   let defaultSite = "";
   let groups = A.buildGroups(apps);
@@ -122,10 +125,11 @@ var MagicSearchCatalog = (() => {
 
   async function init() {
     try {
-      const sync = await chrome.storage.sync.get(["appVariants", "appAliases", "extraSites"]);
+      const sync = await chrome.storage.sync.get(["appVariants", "appAliases", "extraSites", "searchFields"]);
       variantChoices = A.variantChoicesFor(sync.appVariants, location.origin);
       aliasEdits = sync.appAliases || {};
       extraSites = extraSitesFor(sync.extraSites);
+      searchFields = sync.searchFields || {};
     } catch (_) {}
     rebuild();
     try {
@@ -151,6 +155,10 @@ var MagicSearchCatalog = (() => {
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync" && changes.searchFields) {
+      searchFields = changes.searchFields.newValue || {};
+      rebuild();
+    }
     if (area === "sync" && changes.extraSites) {
       extraSites = extraSitesFor(changes.extraSites.newValue);
       rebuild();
@@ -171,6 +179,7 @@ var MagicSearchCatalog = (() => {
     groups: () => groups,
     sites,
     defaultSite: () => defaultSite,
+    searchFields: () => searchFields,
     onUpdate: (fn) => listeners.push(fn),
     refresh,
     ready,

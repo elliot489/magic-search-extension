@@ -2,6 +2,7 @@
 // See docs/app-list-plan.md.
 (() => {
   const A = MagicSearchApps;
+  const R = MagicSearchRecords;
   const listsEl = document.getElementById("app-lists");
   const sitesEl = document.getElementById("sites");
   const variantsEl = document.getElementById("variants");
@@ -10,6 +11,7 @@
 
   let appVariants = {}; // { "<origin>": { groupName: appId } } (see MagicSearchApps.variantChoicesFor)
   let aliasEdits = {};
+  let searchFields = {}; // { groupName: "field" }, in sync storage as searchFields (record search)
   let lastUsed = null; // { key, entry } of the list from the Maximo page used last
   let sites = []; // [{ origin, apps, siteIds }]: each Maximo server's apps and site ids, from its saved lists
   let descriptions = {}; // { "<origin>": "text" }, in sync storage as siteDescriptions
@@ -72,10 +74,11 @@
 
   async function load() {
     const local = await chrome.storage.local.get(null);
-    const sync = await chrome.storage.sync.get(["appVariants", "appAliases", "siteDescriptions", "extraSites"]);
+    const sync = await chrome.storage.sync.get(["appVariants", "appAliases", "siteDescriptions", "extraSites", "searchFields"]);
     extraSites = sync.extraSites || {};
     appVariants = sync.appVariants || {};
     aliasEdits = sync.appAliases || {};
+    searchFields = sync.searchFields || {};
     descriptions = sync.siteDescriptions || {};
     const key = local.appsLastUsed;
     lastUsed = key && local[key] && Array.isArray(local[key].apps) ? { key, entry: local[key] } : null;
@@ -309,17 +312,48 @@
         ...new Set(g.aliases.flatMap((a) => (shared[a.alias] || []).filter((label) => label !== g.label))),
       ];
       if (others.length) notes.append(el("span", { className: "alias-shared", textContent: `also used by ${others.join(", ")}` }));
-      const tr = el("tr", {}, el("td", { textContent: g.label }), el("td", {}, input), el("td", {}, reset), notes);
+      const tr = el("tr", {}, el("td", { textContent: g.label }), el("td", {}, input), el("td", {}, reset), searchFieldCell(g), notes);
       tr.className = "alias-row";
       tr.dataset.group = g.name;
       return tr;
     });
-    aliasesEl.replaceChildren(el("table", {}, ...rows));
+    const head = el("tr", {}, ...["App", "Aliases", "", "Search field", ""].map((t) => el("th", { textContent: t })));
+    aliasesEl.replaceChildren(el("table", {}, head, ...rows));
     filterAliases();
     if (focusGroup) {
       const row = [...aliasesEl.querySelectorAll(".alias-row")].find((tr) => tr.dataset.group === focusGroup);
       row?.querySelector(".alias-input")?.focus();
     }
+  }
+
+  // The record search field for an app (empty: the default, shown as the
+  // placeholder). Apps that can't be filtered (Start Center) get none.
+  function searchFieldCell(g) {
+    const cell = el("td");
+    if (g.app.noFilter) return cell;
+    const fallback = R.defaultTextField(g.name);
+    const saved = searchFields[g.name] || "";
+    const input = el("input", { className: "search-field-input", value: saved, placeholder: fallback });
+    input.setAttribute("aria-label", `Search field for ${g.label}`);
+    input.addEventListener("input", () => {
+      const t = input.value.trim();
+      const bad = !!t && !R.cleanField(t);
+      input.classList.toggle("invalid", bad);
+      input.title = bad ? "An attribute name: letters, digits and _, e.g. displayname or item.description" : "";
+    });
+    input.addEventListener("change", () => {
+      const t = input.value.trim();
+      const field = R.cleanField(t);
+      if (t && !field) return; // invalid: not saved (marked in red)
+      const next = { ...searchFields };
+      if (!field || field === fallback) delete next[g.name];
+      else next[g.name] = field;
+      searchFields = next;
+      input.value = next[g.name] || "";
+      chrome.storage.sync.set({ searchFields: next });
+    });
+    cell.append(input);
+    return cell;
   }
 
   function filterAliases() {
@@ -340,6 +374,7 @@
       (area === "sync" &&
         (changes.appVariants ||
           changes.appAliases ||
+          (changes.searchFields && JSON.stringify(changes.searchFields.newValue || {}) !== JSON.stringify(searchFields)) ||
           descriptionsChanged ||
           (changes.extraSites && JSON.stringify(changes.extraSites.newValue || {}) !== JSON.stringify(extraSites)))) ||
       (area === "local" && Object.keys(changes).some((k) => k.startsWith("apps:") || k === "appsLastUsed"));

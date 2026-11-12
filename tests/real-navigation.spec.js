@@ -1,5 +1,7 @@
+const Records = require("../src/records.js");
 const {
   test,
+  appUrl,
   expect,
   palette,
   openPalette,
@@ -163,6 +165,76 @@ test.describe("Maximo really opens what Enter asks for", () => {
       await ext.remove("sync", "extraSites");
     }
   });
+
+  // Apps whose main table has no DESCRIPTION search another field by default
+  // (src/records.js TEXT_FIELDS; People -> DISPLAYNAME). Open each one with
+  // that filter and check Maximo shows the app without an error, so the
+  // field exists. Loaded straight from the URL: these apps aren't in the
+  // recorded test menu. A user without an app gets Maximo's own "no access"
+  // message, which fails the test too; remove the app from the list below
+  // if that happens.
+  const TEXT_FIELD_APPS = {
+    people: ["PERSON"],
+    users: ["USER", "MASUSER"],
+    labor: ["LABOR"],
+    companies: ["COMPANY"],
+    "company master": ["COMPMASTER"],
+    inventory: ["INVENTOR"],
+    "stocked tools": ["TOOLINV"],
+    "bulletin board": ["BBOARD"],
+    "exchange rates": ["EXCHANGE"],
+    "chart of accounts": ["CHRTACCT"],
+    "workflow administration": ["WFADMIN"],
+    logging: ["LOGGING"],
+  };
+
+  test("every app with its own search field is listed here", () => {
+    expect(Object.keys(TEXT_FIELD_APPS).sort()).toEqual(Object.keys(Records.TEXT_FIELDS).sort());
+  });
+
+  // Maximo's messages in its frame(s), e.g. "BMXAA4214E - ...": errors only.
+  async function maximoErrors(page) {
+    const texts = await Promise.all(
+      page.frames().map((f) => f.locator("body").innerText({ timeout: 2_000 }).catch(() => ""))
+    );
+    return texts.flatMap((t) => t.split("\n").filter((line) => /BMXAA\d+E|does not exist|is not valid/i.test(line)));
+  }
+
+  for (const [group, apps] of Object.entries(TEXT_FIELD_APPS)) {
+    for (const app of apps) {
+      const field = Records.TEXT_FIELDS[group].field;
+      test(`${app} (${group}) opens filtered on ${field.toUpperCase()} without an error`, async ({ page }) => {
+        test.info().setTimeout(test.info().timeout + 60_000);
+        const qbe = Records.qbe("a", group);
+        expect(qbe).toBe(`${field}=a`);
+        const url = new URL(appUrl(app.toLowerCase()));
+        url.searchParams.set("additionalevent", "useqbe");
+        url.searchParams.set("additionaleventvalue", qbe);
+        await page.goto(url.toString());
+        await page.waitForLoadState("load");
+        // Wait for the app: a list (filter fields) or a single record opened.
+        await expect
+          .poll(
+            () =>
+              maximoFrame(page)
+                .locator("body")
+                .evaluate((body) => {
+                  const doc = body.ownerDocument;
+                  if (doc.readyState !== "complete") return false;
+                  const inputs = [...doc.querySelectorAll("input, textarea")];
+                  return inputs.some((el) => /_tfrow_/.test(el.id)) || inputs.some((el) => el.offsetParent !== null);
+                })
+                .catch(() => false),
+            { timeout: 30_000 }
+          )
+          .toBe(true);
+        await waitForMaximoIdle(page);
+        const errors = await maximoErrors(page);
+        test.info().annotations.push({ type: "url", description: url.toString() });
+        expect(errors, `Maximo's messages after filtering ${app} on ${field}`).toEqual([]);
+      });
+    }
+  }
 
   // Last: it leaves an unsaved new record open (never saved).
   test('"new wo" + Enter opens Work Orders ready to insert', async ({ page }) => {
