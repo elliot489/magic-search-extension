@@ -82,12 +82,25 @@ Some apps have no DESCRIPTION field, so their text searches another one by defau
 | Users, Users (Manage) | `userid` |
 | Labor | `laborcode` |
 | Companies, Company Master | `name` |
-| Inventory, Stocked Tools | `itemnum` |
+| Inventory | `itemnum` |
 | Bulletin Board | `subject` |
 | Exchange Rates | `currencycode` |
 | Chart of Accounts | `accountname` |
 | Workflow Administration | `processname` |
 | Logging | `logger` |
+| CI Types | `classstructureid` |
+| Record Release, Launch in Context | `displayname` |
+| Time Zone Rules | `timezonename` |
+| Scheduling Alternate Resources | `projectname` |
+| Configure Tooltips | `name` |
+| Cognos Analytics, Report Viewer | `reportname` |
+| Failure Codes | `failurecode` |
+| Message Tracking, Message Reprocessing | `ifacename` |
+| Shipment Receiving | `shipmentnum` |
+| Operational Actions | `stdactnum` |
+| Labor Reporting, Assignment Manager | `laborcode` |
+
+`npm run check-search-fields` lists, for every app you can open, its main table and whether it has DESCRIPTION, and checks that each app's search field exists (it reads Maximo's data dictionary through the REST API; the result is saved in `.auth/search-fields.json`).
 
 To search another field in any app, type its attribute name in the app's **Search field** box on the options page, under **Aliases and search fields** (e.g. `firstname` for People, or `item.description` through a relationship). Clear the box to go back to the default. The choice applies on every Maximo server.
 

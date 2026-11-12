@@ -175,17 +175,31 @@ test.describe("Maximo really opens what Enter asks for", () => {
   // if that happens.
   const TEXT_FIELD_APPS = {
     people: ["PERSON"],
-    users: ["USER", "MASUSER"],
+    users: ["USER"],
     labor: ["LABOR"],
     companies: ["COMPANY"],
     "company master": ["COMPMASTER"],
     inventory: ["INVENTOR"],
-    "stocked tools": ["TOOLINV"],
     "bulletin board": ["BBOARD"],
     "exchange rates": ["EXCHANGE"],
     "chart of accounts": ["CHRTACCT"],
     "workflow administration": ["WFADMIN"],
     logging: ["LOGGING"],
+    "ci types": ["CITYPE"],
+    "record release": ["RLADMIN"],
+    "time zone rules": ["TZRULE"],
+    "scheduling alternate resources": ["SCHOVAVAIL"],
+    "configure tooltips": ["SCHTTMGR"],
+    "cognos analytics": ["COGNOSHOME"],
+    "report viewer": ["RPTOUTPUT"],
+    "failure codes": ["FAILURE"],
+    "launch in context": ["LAUNCH"],
+    "message tracking": ["INTMSGTRK"],
+    "message reprocessing": ["INTERROR"],
+    "shipment receiving": ["SHIPREC"],
+    "operational actions": ["PLUSGOPACT"],
+    "labor reporting": ["LABREP"],
+    "assignment manager": ["WORKMAN"],
   };
 
   test("every app with its own search field is listed here", () => {
